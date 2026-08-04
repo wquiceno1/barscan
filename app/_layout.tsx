@@ -36,6 +36,10 @@ export default function RootLayout() {
           name="transporte"
           options={{ presentation: 'modal', title: 'Costo de transporte' }}
         />
+        <Stack.Screen
+          name="cambio"
+          options={{ presentation: 'modal', title: 'Cambio / Devolución' }}
+        />
         <Stack.Screen name="producto/nuevo" options={{ title: 'Nuevo producto' }} />
         <Stack.Screen name="producto/[barcode]" options={{ title: 'Producto' }} />
         <Stack.Screen name="carga-inicial" options={{ title: 'Carga inicial' }} />

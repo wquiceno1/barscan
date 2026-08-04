@@ -5,6 +5,11 @@
 export const CATEGORIAS_SALIDA = ['colegio', 'deduccion'] as const;
 export type CategoriaSalida = (typeof CATEGORIAS_SALIDA)[number];
 
+// Categoría de una transacción. Además de las salidas (colegio/deducción), una
+// devolución/cambio se persiste como `venta` con categoria = 'devolucion' y
+// líneas de cantidad negativa (ver PLAN-DEVOLUCIONES.md).
+export type CategoriaTx = CategoriaSalida | 'devolucion';
+
 export const SUBCATS_DEDUCCION = [
   'aseo',
   'transporte',
@@ -41,5 +46,6 @@ export function etiquetaSalida(
 ): string | null {
   if (categoria === 'colegio') return 'Colegio';
   if (categoria === 'deduccion') return `Deducción · ${labelSubcat(subcategoria)}`;
+  if (categoria === 'devolucion') return 'Devolución / Cambio';
   return null;
 }

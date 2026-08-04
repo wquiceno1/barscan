@@ -5,7 +5,7 @@ import type {
   Transaccion,
   TransaccionItem,
 } from './types';
-import type { CategoriaSalida, SubcatDeduccion } from './salidas';
+import type { CategoriaTx, SubcatDeduccion } from './salidas';
 import { newId, normalizarBusqueda, nowIso, sqlNormalizar } from './util';
 
 export type NuevaTransaccion = {
@@ -14,7 +14,8 @@ export type NuevaTransaccion = {
   motivo?: string | null;
   // Salida sin venta (colegio/deducción): se guarda como 'ajuste' pero con
   // categoría; resta stock y su `total` es el valor de lo que salió.
-  categoria?: CategoriaSalida | null;
+  // Devolución/cambio: 'venta' + categoria 'devolucion' con líneas negativas.
+  categoria?: CategoriaTx | null;
   subcategoria?: SubcatDeduccion | null;
   lineas: LineaBorrador[];
 };
@@ -42,7 +43,9 @@ export async function finalizarTransaccion(
   const ts = nowIso();
   // Salida categorizada (colegio/deducción): persiste como 'ajuste' pero, a
   // diferencia del ajuste de corrección, sí lleva total (el valor de la salida).
-  const esSalida = t.categoria != null;
+  // Solo colegio/deducción son "salidas" (restan stock con total > 0). Una
+  // devolución es una venta con líneas negativas, no una salida.
+  const esSalida = t.categoria === 'colegio' || t.categoria === 'deduccion';
   const esCorreccion = t.tipo === 'ajuste' && !esSalida;
   const total = esCorreccion
     ? 0
@@ -112,6 +115,33 @@ export async function finalizarTransaccion(
   });
 
   return id;
+}
+
+/**
+ * Registra un cambio/devolución como una `venta` con categoria = 'devolucion':
+ * las líneas de `devuelve` van con cantidad negativa (el producto vuelve al stock
+ * y resta de las ventas) y las de `lleva` con cantidad positiva (venta normal).
+ * El `total` de la transacción es el neto (lleva − devuelve). Reusa
+ * `finalizarTransaccion`. Devuelve el id.
+ */
+export function registrarCambio(
+  db: SQLiteDatabase,
+  cambio: {
+    devuelve: LineaBorrador[];
+    lleva?: LineaBorrador[];
+    cliente?: string | null;
+  }
+): Promise<string> {
+  const lineas: LineaBorrador[] = [
+    ...cambio.devuelve.map((l) => ({ ...l, cantidad: -Math.abs(l.cantidad) })),
+    ...(cambio.lleva ?? []).map((l) => ({ ...l, cantidad: Math.abs(l.cantidad) })),
+  ];
+  return finalizarTransaccion(db, {
+    tipo: 'venta',
+    categoria: 'devolucion',
+    cliente_proveedor: cambio.cliente?.trim() || null,
+    lineas,
+  });
 }
 
 export type FiltroHistorial = {
