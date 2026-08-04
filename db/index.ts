@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const DB_NAME = 'inventario.db';
-const TARGET_VERSION = 3;
+const TARGET_VERSION = 6;
 
 /**
  * Migraciones con el patrón PRAGMA user_version. Se ejecuta desde el `onInit`
@@ -62,6 +62,101 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
     );
     await db.execAsync(`PRAGMA user_version = 3`);
     userVersion = 3;
+  }
+
+  if (userVersion < 4) {
+    // Efectivo contado por mes, para el salario del encargado. El efectivo
+    // estimado (ventas − compras − transporte) se calcula al vuelo; esta tabla
+    // solo guarda el conteo manual que lo sobreescribe. Aditiva (tabla nueva),
+    // no rompe el espejo de respaldo.
+    await db.execAsync(
+      `CREATE TABLE IF NOT EXISTS caja_mensual (
+         mes              TEXT PRIMARY KEY,
+         efectivo_contado INTEGER,
+         created_at       TEXT NOT NULL,
+         updated_at       TEXT NOT NULL,
+         synced           INTEGER NOT NULL DEFAULT 0
+       );
+       CREATE INDEX IF NOT EXISTS idx_caja_unsynced ON caja_mensual(synced) WHERE synced = 0;`
+    );
+    await db.execAsync(`PRAGMA user_version = 4`);
+    userVersion = 4;
+  }
+
+  if (userVersion < 5) {
+    // Cuadre mensual: chequeo de inventario por rotación + registro de faltantes.
+    // `productos.ultimo_conteo` da la rotación (más viejo primero). `faltantes`
+    // registra los descuadres con estado de resolución. `caja_mensual` gana el
+    // snapshot de inventario al cierre (inventario base del mes siguiente) y una
+    // base/préstamo opcional. Todo aditivo (no rompe el espejo de respaldo).
+    await db.execAsync(
+      `ALTER TABLE productos    ADD COLUMN ultimo_conteo     TEXT;
+       ALTER TABLE caja_mensual ADD COLUMN inventario_cierre INTEGER;
+       ALTER TABLE caja_mensual ADD COLUMN base_efectivo     INTEGER;
+
+       CREATE TABLE IF NOT EXISTS faltantes (
+         id              TEXT PRIMARY KEY,
+         barcode         TEXT    NOT NULL,
+         nombre_snapshot TEXT    NOT NULL,
+         mes             TEXT    NOT NULL,
+         fecha_hora      TEXT    NOT NULL,
+         esperado        INTEGER NOT NULL,
+         contado         INTEGER NOT NULL,
+         diff_unidades   INTEGER NOT NULL,
+         diff_valor      INTEGER NOT NULL,
+         ajuste_id       TEXT,
+         resuelto        INTEGER NOT NULL DEFAULT 0,
+         resolucion_nota TEXT,
+         created_at      TEXT    NOT NULL,
+         updated_at      TEXT    NOT NULL,
+         synced          INTEGER NOT NULL DEFAULT 0
+       );
+       CREATE INDEX IF NOT EXISTS idx_faltantes_mes        ON faltantes(mes);
+       CREATE INDEX IF NOT EXISTS idx_faltantes_pendientes ON faltantes(resuelto) WHERE resuelto = 0;
+       CREATE INDEX IF NOT EXISTS idx_faltantes_unsynced   ON faltantes(synced)   WHERE synced = 0;`
+    );
+    await db.runAsync(
+      `INSERT OR IGNORE INTO configuracion (clave, valor) VALUES ('conteo_muestra', '50')`
+    );
+    await db.execAsync(`PRAGMA user_version = 5`);
+    userVersion = 5;
+  }
+
+  if (userVersion < 6) {
+    // Liquidación por período (trimestral, disparada a mano): cada fila es un
+    // período cerrado con su snapshot (salario, inventario, faltantes…) y sirve
+    // de ancla para el siguiente. El efectivo/inventario dejan de ser por mes.
+    // Tabla nueva (aditiva), no rompe el espejo de respaldo.
+    await db.execAsync(
+      `CREATE TABLE IF NOT EXISTS liquidaciones (
+         id                 TEXT PRIMARY KEY,
+         fecha_hora         TEXT    NOT NULL,
+         desde              TEXT,
+         ventas             INTEGER NOT NULL,
+         compras            INTEGER NOT NULL,
+         transporte         INTEGER NOT NULL,
+         colegio            INTEGER NOT NULL,
+         deducciones        INTEGER NOT NULL,
+         inversiones        INTEGER NOT NULL,
+         efectivo           INTEGER NOT NULL,
+         salario_base       INTEGER NOT NULL,
+         salario_pct        REAL    NOT NULL,
+         salario            INTEGER NOT NULL,
+         ganancia           INTEGER NOT NULL,
+         inventario_cierre  INTEGER NOT NULL,
+         inventario_base    INTEGER,
+         faltantes_valor    INTEGER NOT NULL,
+         faltantes_cantidad INTEGER NOT NULL,
+         nota               TEXT,
+         created_at         TEXT    NOT NULL,
+         updated_at         TEXT    NOT NULL,
+         synced             INTEGER NOT NULL DEFAULT 0
+       );
+       CREATE INDEX IF NOT EXISTS idx_liquidaciones_fecha    ON liquidaciones(fecha_hora);
+       CREATE INDEX IF NOT EXISTS idx_liquidaciones_unsynced ON liquidaciones(synced) WHERE synced = 0;`
+    );
+    await db.execAsync(`PRAGMA user_version = 6`);
+    userVersion = 6;
   }
 
   if (userVersion !== TARGET_VERSION) {

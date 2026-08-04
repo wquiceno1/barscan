@@ -37,6 +37,13 @@ export async function getSalarioPct(db: SQLiteDatabase): Promise<number> {
   return Number.isFinite(n) ? n : 7;
 }
 
+/** Cantidad de productos a contar por mes en el chequeo de inventario (50 def.). */
+export async function getConteoMuestra(db: SQLiteDatabase): Promise<number> {
+  const valor = await getConfig(db, 'conteo_muestra');
+  const n = valor != null ? Number(valor) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 50;
+}
+
 /** Devuelve y consume el siguiente correlativo para códigos internos de granel. */
 export async function nextCodigoInterno(db: SQLiteDatabase): Promise<string> {
   let n = 0;

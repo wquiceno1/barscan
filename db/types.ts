@@ -17,6 +17,7 @@ export type Producto = {
   precio: number; // COP, precio de venta vigente
   stock_actual: number;
   activo: number; // 0 | 1 (borrado lógico)
+  ultimo_conteo: string | null; // ISO local del último chequeo físico; null = nunca
   created_at: string;
   updated_at: string;
   synced: number; // 0 | 1

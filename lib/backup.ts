@@ -16,6 +16,9 @@ import {
 } from 'firebase/firestore';
 import type { Producto, Transaccion, TransaccionItem } from '../db/types';
 import type { Transporte } from '../db/transportes';
+import type { CajaMensual } from '../db/caja';
+import type { Faltante } from '../db/faltantes';
+import type { Liquidacion } from '../db/liquidaciones';
 import { getConfig, setConfig } from '../db/configuracion';
 import { usuarioActual } from './auth';
 import { db as firestore } from './firebase';
@@ -28,6 +31,9 @@ const TABLAS_SYNC = [
   'transacciones',
   'transaccion_items',
   'transportes',
+  'caja_mensual',
+  'faltantes',
+  'liquidaciones',
 ] as const;
 
 export type EstadoRespaldo = {
@@ -171,12 +177,24 @@ async function respaldarImpl(db: SQLiteDatabase): Promise<number> {
   const transportes = await db.getAllAsync<Transporte>(
     'SELECT * FROM transportes WHERE synced = 0'
   );
+  const caja = await db.getAllAsync<CajaMensual>(
+    'SELECT * FROM caja_mensual WHERE synced = 0'
+  );
+  const faltantes = await db.getAllAsync<Faltante>(
+    'SELECT * FROM faltantes WHERE synced = 0'
+  );
+  const liquidaciones = await db.getAllAsync<Liquidacion>(
+    'SELECT * FROM liquidaciones WHERE synced = 0'
+  );
 
   const ops: { col: string; id: string; data: DocumentData }[] = [
     ...productos.map((p) => ({ col: 'productos', id: p.barcode, data: p })),
     ...transacciones.map((t) => ({ col: 'transacciones', id: t.id, data: t })),
     ...items.map((i) => ({ col: 'transaccion_items', id: i.id, data: i })),
     ...transportes.map((tr) => ({ col: 'transportes', id: tr.id, data: tr })),
+    ...caja.map((c) => ({ col: 'caja_mensual', id: c.mes, data: c })),
+    ...faltantes.map((f) => ({ col: 'faltantes', id: f.id, data: f })),
+    ...liquidaciones.map((l) => ({ col: 'liquidaciones', id: l.id, data: l })),
   ];
 
   for (let i = 0; i < ops.length; i += LIMITE_LOTE) {
@@ -226,6 +244,24 @@ async function respaldarImpl(db: SQLiteDatabase): Promise<number> {
       'id',
       transportes.map((tr) => tr.id)
     );
+    await marcarSincronizado(
+      db,
+      'caja_mensual',
+      'mes',
+      caja.map((c) => c.mes)
+    );
+    await marcarSincronizado(
+      db,
+      'faltantes',
+      'id',
+      faltantes.map((f) => f.id)
+    );
+    await marcarSincronizado(
+      db,
+      'liquidaciones',
+      'id',
+      liquidaciones.map((l) => l.id)
+    );
   });
 
   await setConfig(db, 'last_backup_at', new Date().toISOString());
@@ -244,12 +280,23 @@ export function restaurar(db: SQLiteDatabase): Promise<number> {
 async function restaurarImpl(db: SQLiteDatabase): Promise<number> {
   if (!usuarioActual()) throw new Error('Sesión no iniciada');
 
-  const [productos, transacciones, items, transportes, config] =
-    await Promise.all([
+  const [
+    productos,
+    transacciones,
+    items,
+    transportes,
+    caja,
+    faltantes,
+    liquidaciones,
+    config,
+  ] = await Promise.all([
       getDocs(collection(firestore, 'productos')),
       getDocs(collection(firestore, 'transacciones')),
       getDocs(collection(firestore, 'transaccion_items')),
       getDocs(collection(firestore, 'transportes')),
+      getDocs(collection(firestore, 'caja_mensual')),
+      getDocs(collection(firestore, 'faltantes')),
+      getDocs(collection(firestore, 'liquidaciones')),
       getDocs(collection(firestore, 'configuracion')),
     ]);
 
@@ -260,9 +307,9 @@ async function restaurarImpl(db: SQLiteDatabase): Promise<number> {
       await db.runAsync(
         `INSERT OR REPLACE INTO productos
            (barcode, nombre, sin_codigo, categoria, modo_precio, costo,
-            margen_pct, precio, stock_actual, activo, created_at, updated_at,
-            synced)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+            margen_pct, precio, stock_actual, activo, ultimo_conteo,
+            created_at, updated_at, synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
         p.barcode,
         p.nombre,
         p.sin_codigo,
@@ -273,6 +320,7 @@ async function restaurarImpl(db: SQLiteDatabase): Promise<number> {
         p.precio,
         p.stock_actual,
         p.activo,
+        p.ultimo_conteo ?? null,
         p.created_at,
         p.updated_at
       );
@@ -334,6 +382,84 @@ async function restaurarImpl(db: SQLiteDatabase): Promise<number> {
         tr.foto ?? null,
         tr.created_at,
         tr.updated_at
+      );
+      total++;
+    }
+
+    for (const d of caja.docs) {
+      const c = d.data() as CajaMensual;
+      await db.runAsync(
+        `INSERT OR REPLACE INTO caja_mensual
+           (mes, efectivo_contado, inventario_cierre, base_efectivo,
+            created_at, updated_at, synced)
+         VALUES (?, ?, ?, ?, ?, ?, 1)`,
+        c.mes,
+        c.efectivo_contado ?? null,
+        c.inventario_cierre ?? null,
+        c.base_efectivo ?? null,
+        c.created_at,
+        c.updated_at
+      );
+      total++;
+    }
+
+    for (const d of faltantes.docs) {
+      const f = d.data() as Faltante;
+      await db.runAsync(
+        `INSERT OR REPLACE INTO faltantes
+           (id, barcode, nombre_snapshot, mes, fecha_hora, esperado, contado,
+            diff_unidades, diff_valor, ajuste_id, resuelto, resolucion_nota,
+            created_at, updated_at, synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        f.id,
+        f.barcode,
+        f.nombre_snapshot,
+        f.mes,
+        f.fecha_hora,
+        f.esperado,
+        f.contado,
+        f.diff_unidades,
+        f.diff_valor,
+        f.ajuste_id ?? null,
+        f.resuelto,
+        f.resolucion_nota ?? null,
+        f.created_at,
+        f.updated_at
+      );
+      total++;
+    }
+
+    for (const d of liquidaciones.docs) {
+      const l = d.data() as Liquidacion;
+      await db.runAsync(
+        `INSERT OR REPLACE INTO liquidaciones
+           (id, fecha_hora, desde, ventas, compras, transporte, colegio,
+            deducciones, inversiones, efectivo, salario_base, salario_pct,
+            salario, ganancia, inventario_cierre, inventario_base,
+            faltantes_valor, faltantes_cantidad, nota, created_at, updated_at,
+            synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        l.id,
+        l.fecha_hora,
+        l.desde ?? null,
+        l.ventas,
+        l.compras,
+        l.transporte,
+        l.colegio,
+        l.deducciones,
+        l.inversiones,
+        l.efectivo,
+        l.salario_base,
+        l.salario_pct,
+        l.salario,
+        l.ganancia,
+        l.inventario_cierre,
+        l.inventario_base ?? null,
+        l.faltantes_valor,
+        l.faltantes_cantidad,
+        l.nota ?? null,
+        l.created_at,
+        l.updated_at
       );
       total++;
     }

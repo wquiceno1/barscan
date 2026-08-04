@@ -13,6 +13,23 @@ export async function valorInventario(
   return row ?? { alCosto: 0, alPrecio: 0 };
 }
 
+/**
+ * Faltantes (descuadres del chequeo de inventario) en un rango [desde, hasta]
+ * (ISO): valor neto (a precio; negativo = faltante) y cantidad de descuadres.
+ */
+export async function totalFaltantes(
+  db: SQLiteDatabase,
+  rango: { desde: string; hasta: string }
+): Promise<{ total: number; cantidad: number }> {
+  const row = await db.getFirstAsync<{ total: number; cantidad: number }>(
+    `SELECT COALESCE(SUM(diff_valor), 0) AS total, COUNT(*) AS cantidad
+       FROM faltantes WHERE fecha_hora >= ? AND fecha_hora <= ?`,
+    rango.desde,
+    rango.hasta
+  );
+  return { total: row?.total ?? 0, cantidad: row?.cantidad ?? 0 };
+}
+
 /** Total de ventas o compras en un rango [desde, hasta] (ISO). Ignora ajustes. */
 export async function totalPorTipo(
   db: SQLiteDatabase,
