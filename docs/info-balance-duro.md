@@ -1,0 +1,13 @@
+"William Darío, hola, ¿qué más? ¿Cómo estás? William Darío, qué pena responderte hasta ahora, pero… está perol el celular, se apaga, se descarga y no hay forma de que se vuelva a prender, y no hace mucho pues que llegamos acá a la a la casa, entonces… no había podido responderte.
+
+Yo estoy por acá en Medellín, en unas terapias. Entonces, mira, el balance lo hacíamos así: pues yo llegaba en la mañana y yo solamente llegaba a pedirles a las trabajadoras, ¿cierto? Ellas me daban el dato de de cada artículo, cuánto había y a qué valor, luego multiplicábamos pues eso y luego sumábamos todas las hojas.
+
+Después de eso sumábamos todas las las todos los fiados, todas las deducciones, el lo que era el arrastre, y teniendo esos totales, entonces los sumábamos con con el total de artículos, ¿cierto? Con el total de artículos que nos hubiese dado ya en la en la en la suma de todo, de todo lo que se contó.
+
+Entonces, ya eso es lo que lo que nosotros buscábamos, ¿cierto? Todo lo que era: el total de artículos que nos dio en la en la en el conteo, el arrastre, las deducciones, los fiados, lo que quedara de efectivo y el sueldo de Iris. Solo que para el efectivo teníamos que hacer otra cosa diferente, que era era sumar, supuestamente, porque no sabemos pues si eso estaría bien o qué, era sumar que el efectivo que había, sumar las inversiones para poderle sacar el sueldo a Iris.
+
+Y ese sueldo que le sacábamos a ella con el 7% se sumaba con todo lo otro: con las deducciones, los fiados, el efectivo que hubiese quedado, el total de artículos, todo eso se sumaba completico para poder dar el dato de que eso fue lo que encontramos en el balance.
+
+Entonces no sé... y lo que buscábamos se da, se da. Lo que buscábamos se da con lo que quedó de artículos de los de los tres meses anteriores, eso que quedó de artículo, el total, sean 12 millones o hubiesen sido 11, eso es lo que buscábamos más la ganancia de la inversión que se hubiese hecho en esos tres meses, ¿cierto? Y si hubiese de pronto base, que se prestara base o algo, también se sumaba ahí, lo cual que eso casi nunca pasaba; siempre era nomás como como el artículo y la ganancia de la inversión. Y eso es lo que buscábamos en todas las otras cosas que se sumaban: el arrastre, las deducciones, los fiados, total de artículos, el sueldo de Iris, el efectivo... todo, todo eso se sumaba, William Darío, y ya ahí hacíamos la diferencia.
+
+Si de pronto te te respondí muy maluco me decís, yo te trato de volver a explicar, ¿listo? Dale pues, William, feliz noche. Quedo pendiente."
