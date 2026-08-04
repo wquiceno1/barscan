@@ -43,6 +43,7 @@ Esto no es un proyecto de tutorial: es software que **se usa a diario en un nego
 - **Recálculo de precio en vivo en compras**: al tipear el nuevo costo, la app sugiere el precio de venta según el margen del producto (o el general), editable para redondear.
 - **Salidas sin venta**: entregas (ej. al colegio de la vereda) y deducciones con motivo — aseo/uso interno, vencido/caducado, dañado en transporte. Descuentan stock valorizado sin contaminar las ventas.
 - **Costo de transporte**: registro de fletes pagados, como categoría propia del flujo de caja (no se mezcla con compras).
+- **Cambios y devoluciones**: un cliente devuelve o cambia un producto ya vendido; en un solo flujo lo que devuelve entra al stock y lo que lleva sale, con el reembolso o cobro de la diferencia. Se persiste como venta neta (líneas negativas), sin inflar ventas ni utilidad y sin migración de esquema.
 
 ### Inventario y catálogo
 - **Carga inicial por sesión de escaneo**: se recorre la tienda escaneando producto por producto; el conteo inicial queda registrado como movimiento trazable.
