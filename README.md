@@ -54,7 +54,7 @@ Esto no es un proyecto de tutorial: es software que **se usa a diario en un nego
 ### Reportes y trazabilidad
 - **Ventas del día** con selector de fecha y **valor del inventario actual**.
 - **Resumen mensual completo**: ventas, compras, transporte, entregas y deducciones desglosadas por motivo — el flujo de caja real del negocio, no solo ventas.
-- **Salario del encargado** calculado como porcentaje configurable sobre el movimiento del mes.
+- **Salario del encargado**: porcentaje configurable sobre el efectivo del mes (estimado como ventas − compras − transporte, ajustable con el conteo real de caja) más lo invertido en compras y transporte.
 - **Utilidad honesta**: solo se calcula sobre ventas con costo conocido — nada de números inventados.
 - **Reportes imprimibles en PDF** (inventario inicial, ventas por día/mes) generados con HTML/CSS y compartidos por el diálogo nativo.
 - **Historial filtrable** por fecha, tipo de operación y producto (por texto o escaneando el código).
