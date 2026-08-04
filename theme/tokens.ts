@@ -8,7 +8,7 @@ export const colors = {
   venta: '#16a34a',
   compra: '#2563eb',
   ajuste: '#d97706',
-  salida: '#0d9488', // salidas sin venta (colegio / deducciones)
+  salida: '#ee46c4', // salidas sin venta (colegio / deducciones)
   transporte: '#7c3aed', // costos de transporte (fletes)
   danger: '#dc2626',
 

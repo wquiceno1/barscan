@@ -6,32 +6,53 @@ import { colors, font, radius, shadow, spacing } from '../../theme/tokens';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
-function Accion({
+/** Acción protagonista (Nueva venta): grande, a todo el ancho, arriba. */
+function AccionHero({
   onPress,
   label,
-  desc,
   icon,
   color,
 }: {
   onPress: () => void;
   label: string;
-  desc: string;
   icon: IconName;
   color: string;
 }) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.action, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.hero, pressed && styles.pressed]}
     >
-      <View style={[styles.iconWrap, { backgroundColor: color }]}>
-        <Ionicons name={icon} size={26} color={colors.textInverse} />
+      <View style={[styles.heroIcon, { backgroundColor: color }]}>
+        <Ionicons name={icon} size={34} color={colors.textInverse} />
       </View>
-      <View style={styles.actionBody}>
-        <Text style={styles.actionLabel}>{label}</Text>
-        <Text style={styles.actionDesc}>{desc}</Text>
+      <Text style={styles.heroLabel}>{label}</Text>
+      {/* <Ionicons name="chevron-forward" size={26} color={colors.textMuted} /> */}
+    </Pressable>
+  );
+}
+
+/** Acción secundaria: tile compacto (ícono + etiqueta), 2 por fila. */
+function AccionTile({
+  onPress,
+  label,
+  icon,
+  color,
+}: {
+  onPress: () => void;
+  label: string;
+  icon: IconName;
+  color: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
+    >
+      <View style={[styles.tileIcon, { backgroundColor: color }]}>
+        <Ionicons name={icon} size={24} color={colors.textInverse} />
       </View>
-      <Ionicons name="chevron-forward" size={22} color={colors.textMuted} />
+      <Text style={styles.tileLabel}>{label}</Text>
     </Pressable>
   );
 }
@@ -40,45 +61,46 @@ export default function OperarScreen() {
   const router = useRouter();
 
   return (
-    <Screen padded>
-      <Text style={styles.title}>¿Qué quieres registrar?</Text>
-      <Text style={styles.subtitle}>Elige una operación para empezar.</Text>
+    <Screen padded scroll style={styles.contenido}>
+      {/* <Text style={styles.title}>¿Qué quieres registrar?</Text> */}
 
-      <View style={styles.list}>
-        <Accion
-          onPress={() => router.push('/transaccion/venta')}
-          label="Nueva venta"
-          desc="Registrar productos vendidos"
-          icon="cart"
-          color={colors.venta}
-        />
-        <Accion
+      <AccionHero
+        onPress={() => router.push('/transaccion/venta')}
+        label="Nueva venta"
+        icon="cart"
+        color={colors.venta}
+      />
+
+      <View style={styles.grid}>
+        <AccionTile
           onPress={() => router.push('/transaccion/compra')}
-          label="Nueva compra"
-          desc="Ingreso de mercadería de proveedor"
+          label="Compra"
           icon="cube"
           color={colors.compra}
         />
-        <Accion
+        <AccionTile
           onPress={() => router.push('/transaccion/ajuste')}
-          label="Ajuste de inventario"
-          desc="Merma, caducidad o conteo físico"
+          label="Ajuste"
           icon="construct"
           color={colors.ajuste}
         />
-        <Accion
+        <AccionTile
           onPress={() => router.push('/salida')}
-          label="Salida sin venta"
-          desc="Entrega al colegio o deducciones (aseo, vencidos…)"
+          label="Salida"
           icon="exit"
           color={colors.salida}
         />
-        <Accion
+        <AccionTile
           onPress={() => router.push('/transporte')}
-          label="Costo de transporte"
-          desc="Registrar un flete pagado"
+          label="Transporte"
           icon="bus"
           color={colors.transporte}
+        />
+        <AccionTile
+          onPress={() => router.push('/cambio')}
+          label="Cambio"
+          icon="swap-horizontal"
+          color={colors.danger}
         />
       </View>
     </Screen>
@@ -86,32 +108,58 @@ export default function OperarScreen() {
 }
 
 const styles = StyleSheet.create({
-  title: { fontSize: font.xxl, fontWeight: '800', color: colors.text },
-  subtitle: {
-    fontSize: font.md,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
-    marginBottom: spacing.xl,
-  },
-  list: { gap: spacing.md },
-  action: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    ...shadow,
+  // Empuja el bloque (título + tarjetas) al fondo: espacio libre arriba, acciones
+  // al alcance del pulgar. Si el contenido no cabe, el ScrollView permite subir.
+  contenido: { justifyContent: 'flex-end' },
+  title: {
+    fontSize: font.xxl,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: spacing.lg,
   },
   pressed: { opacity: 0.85 },
-  iconWrap: {
-    width: 52,
-    height: 52,
+  hero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+    marginBottom: spacing.lg,
+    ...shadow,
+  },
+  heroIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroLabel: { fontSize: font.xl, fontWeight: '800', color: colors.text },
+  grid: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    columnGap: spacing.sm,
+    rowGap: spacing.sm,
+  },
+  tile: {
+    width: '31%',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    ...shadow,
+  },
+  tileIcon: {
+    width: 48,
+    height: 48,
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionBody: { flex: 1, flexShrink: 1 },
-  actionLabel: { fontSize: font.lg, fontWeight: '700', color: colors.text },
-  actionDesc: { fontSize: font.sm, color: colors.textMuted, marginTop: 2 },
+  tileLabel: { fontSize: font.md, fontWeight: '700', color: colors.text },
 });
