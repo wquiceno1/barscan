@@ -2,10 +2,20 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { Button, Card, Screen } from '../../components/ui';
+import { Button, Card, Input, Screen } from '../../components/ui';
 import { getSalarioPct } from '../../db/configuracion';
+import {
+  getEfectivoPeriodo,
+  liquidarPeriodo,
+  listarLiquidaciones,
+  resumenPeriodo,
+  setEfectivoPeriodo,
+  type Liquidacion,
+  type ResumenPeriodo,
+} from '../../db/liquidaciones';
+import { toast } from '../../lib/feedback';
 import {
   deducciones,
   inventarioInicial,
@@ -17,6 +27,7 @@ import {
   type FilaDeduccion,
   type ResumenDia,
 } from '../../db/reportes';
+import { progresoCiclo } from '../../db/faltantes';
 import { labelSubcat } from '../../db/salidas';
 import { totalTransporte } from '../../db/transportes';
 import { formatCOP } from '../../db/util';
@@ -78,6 +89,7 @@ type IconName = keyof typeof Ionicons.glyphMap;
 
 export default function ReportesScreen() {
   const db = useSQLiteContext();
+  const router = useRouter();
   const [d, setD] = useState<DatosMes | null>(null);
   const [inv, setInv] = useState<Inventario | null>(null);
   const [dia, setDia] = useState(hoyStr());
@@ -86,6 +98,18 @@ export default function ReportesScreen() {
   const [mesOffset, setMesOffset] = useState(0);
   const [salarioPct, setSalarioPct] = useState(7);
   const [salarioAbierto, setSalarioAbierto] = useState(false);
+  // Período de liquidación (trimestral, disparado a mano). `efectivoContado` es
+  // el conteo de caja del período (null = usar el estimado); `efectivoTexto` es
+  // el borrador del input.
+  const [periodo, setPeriodo] = useState<ResumenPeriodo | null>(null);
+  const [efectivoContado, setEfectivoContado] = useState<number | null>(null);
+  const [efectivoTexto, setEfectivoTexto] = useState('');
+  const [cobertura, setCobertura] = useState<{
+    contados: number;
+    total: number;
+  } | null>(null);
+  const [liquidaciones, setLiquidaciones] = useState<Liquidacion[]>([]);
+  const [historialAbierto, setHistorialAbierto] = useState(false);
   const [pdfCargando, setPdfCargando] = useState<
     null | 'inv' | 'histo' | 'dia' | 'mes'
   >(null);
@@ -93,12 +117,68 @@ export default function ReportesScreen() {
   const esHoy = dia === hoyStr();
   const esMesActual = mesOffset === 0;
 
-  // Base del salario del mes = ventas + compras + transporte + colegio +
-  // deducciones. El salario es un % configurable (7% por defecto) de esa base.
-  const salarioBase = d
-    ? d.ventas + d.compras + d.transporte + d.colegio + d.deducciones
-    : 0;
+  // Salario del encargado = % configurable × (efectivo + inversiones), sobre el
+  // ACUMULADO del período de liquidación (trimestral, disparado a mano).
+  // Inversiones = compras + transporte del período; efectivo estimado =
+  // ventas − compras − transporte, sobreescribible con el conteo real de caja.
+  // Ver PLAN-AJUSTE-SALARIO.md / PLAN-CUADRE-MENSUAL.md.
+  const inversiones = periodo ? periodo.inversiones : 0;
+  const efectivoEstimado = periodo ? periodo.efectivoEstimado : 0;
+  const efectivoUsado = efectivoContado ?? efectivoEstimado;
+  const salarioBase = efectivoUsado + inversiones;
   const salario = Math.round((salarioBase * salarioPct) / 100);
+
+  // Carga el período actual (agregados, efectivo, cobertura, historial).
+  const cargarPeriodo = useCallback(() => {
+    resumenPeriodo(db).then(setPeriodo);
+    getEfectivoPeriodo(db).then((v) => {
+      setEfectivoContado(v);
+      setEfectivoTexto(v == null ? '' : String(v));
+    });
+    progresoCiclo(db).then(setCobertura);
+    listarLiquidaciones(db).then(setLiquidaciones);
+  }, [db]);
+
+  // Guarda el conteo de efectivo del período (texto vacío = volver al estimado).
+  const guardarEfectivo = async () => {
+    const limpio = efectivoTexto.replace(/[^\d]/g, '');
+    const monto = limpio === '' ? null : Number(limpio);
+    await setEfectivoPeriodo(db, monto);
+    setEfectivoContado(monto);
+    toast(monto == null ? 'Efectivo en estimado' : 'Efectivo guardado');
+  };
+
+  const usarEstimado = async () => {
+    await setEfectivoPeriodo(db, null);
+    setEfectivoContado(null);
+    setEfectivoTexto('');
+    toast('Efectivo en estimado');
+  };
+
+  // Liquida el período: calcula salario y cuadre sobre el acumulado, guarda el
+  // snapshot en `liquidaciones` y arranca un período nuevo.
+  const liquidar = () => {
+    if (!periodo) return;
+    Alert.alert(
+      'Liquidar período',
+      `Se cierra el período: salario ${formatCOP(
+        salario
+      )} · inventario ${formatCOP(
+        periodo.inventarioActual
+      )}. Arranca un período nuevo. ¿Continuar?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Liquidar',
+          onPress: async () => {
+            await liquidarPeriodo(db, { efectivoContado });
+            toast('Período liquidado');
+            cargarPeriodo();
+          },
+        },
+      ]
+    );
+  };
 
   // Genera un PDF y abre el diálogo nativo de compartir/imprimir. `construir`
   // devuelve null cuando el reporte no tiene filas.
@@ -171,6 +251,9 @@ export default function ReportesScreen() {
       getSalarioPct(db).then(setSalarioPct);
     }, [db])
   );
+
+  // Período de liquidación: se recarga al volver a la pantalla.
+  useFocusEffect(cargarPeriodo);
 
   useFocusEffect(
     useCallback(() => {
@@ -317,7 +400,26 @@ export default function ReportesScreen() {
           caption={desgloseDeducciones(d?.deduccionesFilas)}
         />
 
+        <Text style={styles.section}>Período de liquidación</Text>
+
+        {periodo != null && periodo.mesesTranscurridos >= 3 && (
+          <Card style={styles.avisoCard}>
+            <Ionicons name="alarm" size={20} color={colors.ajuste} />
+            <Text style={styles.avisoText}>
+              Este período lleva {periodo.mesesTranscurridos} meses. Suele
+              liquidarse cada 3 — cuando quieras, tocá “Liquidar período”.
+            </Text>
+          </Card>
+        )}
+
         <Card style={styles.salarioCard}>
+          <Text style={styles.periodoInfo}>
+            {periodo == null
+              ? '—'
+              : `${periodo.inicio ? `Desde ${periodo.desde.slice(0, 10)}` : 'Primer período'} · ${periodo.mesesTranscurridos} ${
+                  periodo.mesesTranscurridos === 1 ? 'mes' : 'meses'
+                }`}
+          </Text>
           <Pressable
             style={styles.salarioHead}
             onPress={() => setSalarioAbierto((v) => !v)}
@@ -331,7 +433,9 @@ export default function ReportesScreen() {
               <Ionicons name="wallet" size={20} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.kpiLabel}>Mi salario del mes ({salarioPct}%)</Text>
+              <Text style={styles.kpiLabel}>
+                Salario a liquidar ({salarioPct}%)
+              </Text>
               <Text
                 style={[
                   styles.kpiValue,
@@ -339,7 +443,7 @@ export default function ReportesScreen() {
                   { color: colors.primary },
                 ]}
               >
-                {d == null ? '—' : formatCOP(salario)}
+                {periodo == null ? '—' : formatCOP(salario)}
               </Text>
             </View>
             <Ionicons
@@ -350,22 +454,160 @@ export default function ReportesScreen() {
           </Pressable>
           {salarioAbierto && (
             <View style={styles.salarioBody}>
-              <FilaSalario label="Ventas" value={d?.ventas} />
-              <FilaSalario label="Compras" value={d?.compras} />
-              <FilaSalario label="Transporte" value={d?.transporte} />
-              <FilaSalario label="Entregado al colegio" value={d?.colegio} />
-              <FilaSalario label="Deducciones" value={d?.deducciones} />
+              <FilaSalario
+                label={
+                  efectivoContado != null
+                    ? 'Efectivo (conteo)'
+                    : 'Efectivo (estimado)'
+                }
+                value={periodo ? efectivoUsado : undefined}
+              />
+              <FilaSalario
+                label="Inversiones (compras + transporte)"
+                value={periodo ? inversiones : undefined}
+              />
               <View style={styles.salarioDivider} />
-              <FilaSalario label="Base (suma)" value={salarioBase} bold />
+              <FilaSalario
+                label="Base (suma)"
+                value={periodo ? salarioBase : undefined}
+                bold
+              />
               <FilaSalario
                 label={`Salario (${salarioPct}%)`}
-                value={salario}
+                value={periodo ? salario : undefined}
                 bold
                 color={colors.primary}
               />
+
+              <View style={styles.efectivoBox}>
+                <Text style={styles.efectivoHelp}>
+                  Efectivo estimado del período:{' '}
+                  {periodo ? formatCOP(efectivoEstimado) : '—'} (ventas −
+                  compras − transporte). Ajustalo con el conteo real de la caja
+                  al liquidar.
+                </Text>
+                <Input
+                  label="Efectivo contado (opcional)"
+                  keyboardType="numeric"
+                  value={efectivoTexto}
+                  onChangeText={setEfectivoTexto}
+                  placeholder="Vacío = usar estimado"
+                  selectTextOnFocus
+                />
+                <Button
+                  label="Guardar efectivo"
+                  icon="save"
+                  onPress={guardarEfectivo}
+                />
+                {efectivoContado != null && (
+                  <Pressable onPress={usarEstimado} style={styles.hoyBtn}>
+                    <Ionicons name="refresh" size={14} color={colors.primary} />
+                    <Text style={styles.hoyBtnText}>Usar estimado</Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
           )}
         </Card>
+
+        <Card style={styles.cuadreCard}>
+          <FilaSalario
+            label="Inventario actual (a precio)"
+            value={periodo?.inventarioActual}
+          />
+          <FilaSalario
+            label="Inventario base (últ. liquidación)"
+            value={periodo?.inventarioBase ?? undefined}
+          />
+          <FilaSalario
+            label="Ganancia del período"
+            value={periodo?.ganancia}
+            color={colors.venta}
+          />
+          {periodo != null && periodo.coberturaGanancia < 1 && (
+            <Text style={styles.cuadreNota}>
+              Ganancia sobre {Math.round(periodo.coberturaGanancia * 100)}% de
+              las ventas (solo líneas con costo conocido).
+            </Text>
+          )}
+          <FilaSalario
+            label="Faltantes del período"
+            value={periodo?.faltantesValor}
+            color={
+              periodo && periodo.faltantesValor < 0
+                ? colors.danger
+                : colors.text
+            }
+          />
+
+          <View style={styles.salarioDivider} />
+
+          <View style={styles.cuadreChequeo}>
+            <Ionicons
+              name="clipboard-outline"
+              size={18}
+              color={colors.primary}
+            />
+            <Text style={styles.cuadreChequeoText}>
+              Chequeo:{' '}
+              {cobertura
+                ? `${cobertura.contados}/${cobertura.total} del catálogo contados`
+                : '—'}
+              {periodo ? ` · ${periodo.faltantesCantidad} descuadres` : ''}
+            </Text>
+          </View>
+
+          <Button
+            label="Chequeo de inventario"
+            icon="clipboard-outline"
+            onPress={() => router.push('/conteo')}
+          />
+          <Button
+            label="Ver faltantes"
+            icon="alert-circle-outline"
+            variant="secondary"
+            onPress={() => router.push('/faltantes')}
+          />
+          <Button
+            label="Liquidar período"
+            icon="lock-closed-outline"
+            onPress={liquidar}
+          />
+        </Card>
+
+        {liquidaciones.length > 0 && (
+          <Card style={styles.salarioCard}>
+            <Pressable
+              style={styles.salarioHead}
+              onPress={() => setHistorialAbierto((v) => !v)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.kpiLabel}>
+                  Liquidaciones anteriores ({liquidaciones.length})
+                </Text>
+              </View>
+              <Ionicons
+                name={historialAbierto ? 'chevron-up' : 'chevron-down'}
+                size={22}
+                color={colors.textMuted}
+              />
+            </Pressable>
+            {historialAbierto && (
+              <View style={styles.salarioBody}>
+                {liquidaciones.map((l) => (
+                  <View key={l.id} style={styles.filaSalario}>
+                    <Text style={styles.filaLabel}>
+                      {l.fecha_hora.slice(0, 10)}
+                    </Text>
+                    <Text style={styles.filaValue}>
+                      Salario {formatCOP(l.salario)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </Card>
+        )}
 
         <Text style={styles.section}>Reportes imprimibles</Text>
         <Card style={{ gap: spacing.sm }}>
@@ -541,4 +783,31 @@ const styles = StyleSheet.create({
   filaLabel: { fontSize: font.md, color: colors.textMuted },
   filaValue: { fontSize: font.md, color: colors.text, fontWeight: '600' },
   filaBold: { fontWeight: '800', color: colors.text },
+  efectivoBox: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: spacing.sm,
+  },
+  efectivoHelp: { fontSize: font.xs, color: colors.textMuted },
+  cuadreCard: { gap: spacing.sm },
+  cuadreNota: { fontSize: font.xs, color: colors.textMuted },
+  cuadreChequeo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  cuadreChequeoText: { flex: 1, fontSize: font.sm, color: colors.text },
+  avisoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.ajuste + '14',
+    borderWidth: 1,
+    borderColor: colors.ajuste + '40',
+  },
+  avisoText: { flex: 1, fontSize: font.sm, color: colors.text },
+  periodoInfo: { fontSize: font.xs, color: colors.textMuted },
 });

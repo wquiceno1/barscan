@@ -6,6 +6,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import type { User } from 'firebase/auth';
 import { Button, Card, Input, Screen } from '../../components/ui';
 import {
+  getConteoMuestra,
   getMargenGeneral,
   getSalarioPct,
   setConfig,
@@ -56,6 +57,7 @@ export default function AjustesScreen() {
   const router = useRouter();
   const [margen, setMargen] = useState('');
   const [salario, setSalario] = useState('');
+  const [muestra, setMuestra] = useState('');
   const [pctAbierto, setPctAbierto] = useState(false);
 
   // --- Respaldo ---
@@ -92,6 +94,7 @@ export default function AjustesScreen() {
     useCallback(() => {
       getMargenGeneral(db).then((m) => setMargen(String(m)));
       getSalarioPct(db).then((s) => setSalario(String(s)));
+      getConteoMuestra(db).then((n) => setMuestra(String(n)));
       refrescar();
       return onCambioSesion(() => refrescar());
     }, [db, refrescar])
@@ -108,9 +111,15 @@ export default function AjustesScreen() {
       Alert.alert('Salario inválido', 'Ingresa un porcentaje válido.');
       return;
     }
+    const n = Number(muestra);
+    if (!Number.isFinite(n) || n < 1) {
+      Alert.alert('Muestra inválida', 'Ingresa cuántos productos contar (≥ 1).');
+      return;
+    }
     await setConfig(db, 'margen_general_pct', String(m));
     await setConfig(db, 'salario_pct', String(s));
-    toast('Porcentajes guardados');
+    await setConfig(db, 'conteo_muestra', String(Math.round(n)));
+    toast('Ajustes guardados');
   };
 
   const login = async () => {
@@ -334,8 +343,8 @@ export default function AjustesScreen() {
           <>
             <Text style={styles.help}>
               Margen para sugerir precios (modo “calcular con margen”) y el
-              porcentaje de tu salario mensual sobre ventas, compras, transporte
-              y deducciones.
+              porcentaje de tu salario mensual sobre el efectivo del mes
+              (estimado o contado) más lo invertido en compras y transporte.
             </Text>
             <View style={styles.pctRow}>
               <View style={styles.pctCol}>
@@ -355,6 +364,13 @@ export default function AjustesScreen() {
                 />
               </View>
             </View>
+            <Input
+              label="Productos a contar por mes"
+              hint="Cuántos productos pide el chequeo de inventario cada mes (rotación)."
+              keyboardType="numeric"
+              value={muestra}
+              onChangeText={setMuestra}
+            />
             <Button label="Guardar" icon="save" onPress={guardarPorcentajes} />
           </>
         )}

@@ -39,6 +39,8 @@ export default function RootLayout() {
         <Stack.Screen name="producto/nuevo" options={{ title: 'Nuevo producto' }} />
         <Stack.Screen name="producto/[barcode]" options={{ title: 'Producto' }} />
         <Stack.Screen name="carga-inicial" options={{ title: 'Carga inicial' }} />
+        <Stack.Screen name="conteo" options={{ title: 'Chequeo de inventario' }} />
+        <Stack.Screen name="faltantes" options={{ title: 'Faltantes' }} />
         <Stack.Screen name="detalle/[id]" options={{ title: 'Detalle' }} />
       </Stack>
       <StatusBar style="auto" />
