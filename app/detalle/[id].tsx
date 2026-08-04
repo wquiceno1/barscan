@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Card, Screen } from '../../components/ui';
@@ -44,7 +44,7 @@ export default function DetalleScreen() {
   const mostrarTotal = tx.tipo !== 'ajuste' || salida != null;
 
   return (
-    <Screen padded>
+    <Screen padded scroll>
       <Text style={styles.tipo}>{salida ?? ETIQUETA[tx.tipo]}</Text>
       <Text style={styles.meta}>{tx.fecha_hora.replace('T', ' ')}</Text>
       {tx.cliente_proveedor ? (
@@ -53,19 +53,13 @@ export default function DetalleScreen() {
       {tx.motivo ? <Text style={styles.meta}>Nota: {tx.motivo}</Text> : null}
 
       <Card flat style={styles.list}>
-        <FlatList
-          data={items}
-          keyExtractor={(i) => i.id}
-          scrollEnabled={false}
-          ItemSeparatorComponent={() => <View style={styles.sep} />}
-          renderItem={({ item }) => (
-            <View style={styles.row}>
-              <Text style={styles.nombre}>{item.nombre_snapshot}</Text>
-              <Text style={styles.cant}>×{item.cantidad}</Text>
-              <Text style={styles.sub}>{formatCOP(item.subtotal)}</Text>
-            </View>
-          )}
-        />
+        {items.map((item, i) => (
+          <View key={item.id} style={[styles.row, i > 0 && styles.rowBorder]}>
+            <Text style={styles.nombre}>{item.nombre_snapshot}</Text>
+            <Text style={styles.cant}>×{item.cantidad}</Text>
+            <Text style={styles.sub}>{formatCOP(item.subtotal)}</Text>
+          </View>
+        ))}
       </Card>
 
       {mostrarTotal && (
@@ -79,7 +73,10 @@ const styles = StyleSheet.create({
   tipo: { fontSize: font.xxl, fontWeight: '800', color: colors.text },
   meta: { fontSize: font.sm, color: colors.textMuted, marginTop: 2 },
   list: { marginTop: spacing.lg, padding: spacing.md },
-  sep: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+  rowBorder: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
