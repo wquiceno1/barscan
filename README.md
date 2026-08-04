@@ -51,10 +51,12 @@ Esto no es un proyecto de tutorial: es software que **se usa a diario en un nego
 - Catálogo con **orden por stock/precio, filtro de stock bajo, indicador de agotado** y borrado lógico (desactivar/reactivar sin perder historial).
 - Búsqueda **insensible a acentos** y tolerante al orden de las palabras.
 
-### Reportes y trazabilidad
+### Reportes, cuadre y trazabilidad
 - **Ventas del día** con selector de fecha y **valor del inventario actual**.
-- **Resumen mensual completo**: ventas, compras, transporte, entregas y deducciones desglosadas por motivo — el flujo de caja real del negocio, no solo ventas.
-- **Salario del encargado**: porcentaje configurable sobre el efectivo del mes (estimado como ventas − compras − transporte, ajustable con el conteo real de caja) más lo invertido en compras y transporte.
+- **Resumen mensual**: ventas, compras, transporte, entregas y deducciones desglosadas por motivo — el flujo de caja real del negocio, no solo ventas.
+- **Cuadre por liquidación (trimestral)**: los valores se **acumulan** desde la última liquidación hasta que se cierra el período a mano (con recordatorio al pasar 3 meses). Cada liquidación deja un snapshot de salario, inventario, ganancia y faltantes que **ancla el período siguiente**. Reproduce el balance trimestral que hacía la tesorera, hecho automático con la data.
+- **Salario del encargado**: porcentaje configurable sobre el efectivo del período (estimado como ventas − compras − transporte, ajustable con el conteo real de caja) más lo invertido en compras y transporte.
+- **Chequeo de inventario por rotación**: el sistema pide una muestra de productos (los menos recientemente contados); al descuadrar, **sana el libro** con un ajuste trazable y registra el **faltante** con estado de resolución (quién paga). Detecta merma sin forzar un conteo total de la tienda.
 - **Utilidad honesta**: solo se calcula sobre ventas con costo conocido — nada de números inventados.
 - **Reportes imprimibles en PDF** (inventario inicial, ventas por día/mes) generados con HTML/CSS y compartidos por el diálogo nativo.
 - **Historial filtrable** por fecha, tipo de operación y producto (por texto o escaneando el código).
@@ -111,19 +113,27 @@ La app **nunca lee de Firestore en operación normal**. Se descartó el modo off
 | **Migraciones con `PRAGMA user_version`** | Versionado de esquema simple y aditivo (nunca renombrar/borrar columnas) para no romper el espejo de respaldo. |
 | **Código interno `INT-` para granel** | Los productos sin código de barras usan el mismo campo `barcode` — el modelo de datos no tiene casos especiales. |
 | **Ajustes fuera de los reportes de dinero** | Merma y conteos afectan stock, pero jamás se cuentan como ingreso/egreso. |
+| **Cuadre por muestreo rotativo** | El inventario físico no se cuenta entero: cada período se revisa una muestra (los menos contados). Detecta deriva y cubre el catálogo con el tiempo, sin frenar la tienda. |
+| **Liquidación como período abierto** | Salario y cuadre acumulan desde la última liquidación hasta que se cierra a mano (~trimestral), en vez de un corte de calendario. Más fiel al proceso real y evita re-gravar el capital cada mes. |
 | **Cola serializada de respaldo** | `expo-sqlite` no admite transacciones concurrentes en una conexión; respaldo y restauración se serializan en una sola cola de promesas. |
 | **WAL + foreign keys ON** | Escrituras no bloquean lecturas; integridad referencial real. |
 
 ### Modelo de datos
 
-Cuatro tablas, sin ORM — SQL directo y tipado con TypeScript estricto:
+Ocho tablas, sin ORM — SQL directo y tipado con TypeScript estricto:
 
 ```
-productos          (barcode PK, precio, costo, margen, stock_actual, activo, synced…)
-transacciones      (id, tipo: compra|venta|ajuste, fecha, total, synced…)
-transaccion_items  (snapshots de nombre, costo y precio unitario, synced…)
-configuracion      (clave/valor: margen general, moneda, correlativo interno)
+productos          (barcode PK, precio, costo, margen, stock_actual, activo, ultimo_conteo, synced…)
+transacciones      (id, tipo: compra|venta|ajuste, categoria/subcategoria, fecha, total, synced…)
+transaccion_items  (snapshots de nombre, costo y precio unitario por línea, synced…)
+transportes        (fletes pagados; gasto puro que no toca stock, synced…)
+faltantes          (descuadres del chequeo de inventario, con estado de resolución, synced…)
+liquidaciones      (cierre de período: salario, inventario, ganancia y faltantes, synced…)
+caja_mensual       (efectivo por mes; retenida por la regla aditiva, hoy en desuso)
+configuracion      (clave/valor: margen general, salario %, muestra de conteo, efectivo del período…)
 ```
+
+Esquema **aditivo** por migraciones (`PRAGMA user_version`, hoy en **v6**): nunca se renombra ni borra una columna, para no romper el espejo de respaldo.
 
 ---
 
@@ -149,6 +159,8 @@ Sin librerías de estado global, sin ORM, sin UI kit: **la complejidad está don
 app/                    # Expo Router (file-based)
 ├── (tabs)/             # Operar, Catálogo, Historial, Reportes, Ajustes
 ├── transaccion/[tipo]  # Sesión de venta / compra / ajuste
+├── salida, transporte  # Salidas sin venta (colegio/deducciones) y fletes
+├── conteo, faltantes   # Chequeo de inventario por rotación y panel de faltantes
 ├── producto/           # Ficha y alta de producto
 └── carga-inicial       # Sesión de escaneo para inventario inicial
 components/             # ScannerView, BuscadorProducto, SyncManager, ui/
@@ -185,6 +197,7 @@ npm run build:android:aab   # App Bundle para Play Store
 - [ ] Ampliar simbologías del escáner (Code-128, ITF)
 - [ ] Respaldo en background (requiere development build)
 - [ ] Respaldar cambios de solo configuración
+- [ ] Cobrar faltantes a costo (cuando la cobertura de costos sea alta)
 
 ## 📄 Licencia
 
