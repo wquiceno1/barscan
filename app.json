@@ -2,7 +2,7 @@
   "expo": {
     "name": "bar-scan-demo",
     "slug": "bar-scan-demo",
-    "version": "1.0.8",
+    "version": "1.0.9",
     "scheme": "barscan",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

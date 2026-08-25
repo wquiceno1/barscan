@@ -44,6 +44,7 @@ Esto no es un proyecto de tutorial: es software que **se usa a diario en un nego
 - **Salidas sin venta**: entregas (ej. al colegio de la vereda) y deducciones con motivo — aseo/uso interno, vencido/caducado, dañado en transporte. Descuentan stock valorizado sin contaminar las ventas.
 - **Costo de transporte**: registro de fletes pagados, como categoría propia del flujo de caja (no se mezcla con compras).
 - **Cambios y devoluciones**: un cliente devuelve o cambia un producto ya vendido; en un solo flujo lo que devuelve entra al stock y lo que lleva sale, con el reembolso o cobro de la diferencia. Se persiste como venta neta (líneas negativas), sin inflar ventas ni utilidad y sin migración de esquema.
+- **Anulación de movimientos** (Ajustes → Corregir movimientos): borra una venta, compra o ajuste cargado por error y devuelve el stock a como estaba. El borrado **se propaga a la nube** mediante lápidas (ver abajo), en vez de quedar solo en el teléfono. Un ajuste que sanó un faltante no se puede anular sin resolver antes el faltante.
 
 ### Inventario y catálogo
 - **Carga inicial por sesión de escaneo**: se recorre la tienda escaneando producto por producto; el conteo inicial queda registrado como movimiento trazable.
@@ -61,11 +62,15 @@ Esto no es un proyecto de tutorial: es software que **se usa a diario en un nego
 - **Utilidad honesta**: solo se calcula sobre ventas con costo conocido — nada de números inventados.
 - **Reportes imprimibles en PDF** (inventario inicial, ventas por día/mes) generados con HTML/CSS y compartidos por el diálogo nativo.
 - **Historial filtrable** por fecha, tipo de operación y producto (por texto o escaneando el código).
+- **Ventas por producto**, en dos vistas sobre el mismo filtro de semana / mes / histórico:
+  - **Más vendidos**: ranking ordenable **por unidades o por plata** — son listas distintas (el confite de $100 lidera en unidades; el cigarrillo, en dinero) y cada una responde a una pregunta distinta: qué reponer vs. qué sostiene el negocio. El orden se invierte para ver la cola de lo que sí rota pero poco. Las devoluciones se netean, así que una unidad devuelta deja de contar como vendida.
+  - **Sin ventas**: el complemento exacto — productos activos que no movieron una sola unidad en el período, con la **plata que tienen quieta en el estante** (stock × precio) y hace cuánto que no se venden, o si nunca se vendieron. Es la contracara del ranking: no dice qué reponer, dice qué dejar de comprar.
 
 ### Respaldo y seguridad
 - **Respaldo automático a Firestore** (espejo unidireccional): cada fila modificada se marca `synced=0` y un proceso ligero la empuja cuando hay red, en lotes.
 - **Recuperación ante pérdida del teléfono**: en un equipo nuevo con base vacía, la app restaura todo desde el respaldo.
 - **Login con email/clave + ingreso con huella** (credenciales cifradas en SecureStore). La huella es un atajo local, no un método de recuperación.
+- **Borrados que sí viajan**: como la restauración es `INSERT OR REPLACE` y nunca borra filas, al anular un movimiento se guarda una *lápida* (`eliminaciones`) que el respaldo traduce en un `delete` del documento espejo. Sin eso, borrar en el teléfono no llegaría a Firestore y borrar en Firestore no llegaría al teléfono.
 
 ---
 
@@ -121,7 +126,7 @@ La app **nunca lee de Firestore en operación normal**. Se descartó el modo off
 
 ### Modelo de datos
 
-Ocho tablas, sin ORM — SQL directo y tipado con TypeScript estricto:
+Nueve tablas, sin ORM — SQL directo y tipado con TypeScript estricto:
 
 ```
 productos          (barcode PK, precio, costo, margen, stock_actual, activo, ultimo_conteo, synced…)
@@ -131,10 +136,11 @@ transportes        (fletes pagados; gasto puro que no toca stock, synced…)
 faltantes          (descuadres del chequeo de inventario, con estado de resolución, synced…)
 liquidaciones      (cierre de período: salario, inventario, ganancia y faltantes, synced…)
 caja_mensual       (efectivo por mes; retenida por la regla aditiva, hoy en desuso)
+eliminaciones      (lápidas de filas anuladas; el push las convierte en deletes en Firestore)
 configuracion      (clave/valor: margen general, salario %, muestra de conteo, efectivo del período…)
 ```
 
-Esquema **aditivo** por migraciones (`PRAGMA user_version`, hoy en **v6**): nunca se renombra ni borra una columna, para no romper el espejo de respaldo.
+Esquema **aditivo** por migraciones (`PRAGMA user_version`, hoy en **v7**): nunca se renombra ni borra una columna, para no romper el espejo de respaldo.
 
 ---
 
@@ -162,6 +168,8 @@ app/                    # Expo Router (file-based)
 ├── transaccion/[tipo]  # Sesión de venta / compra / ajuste
 ├── salida, transporte  # Salidas sin venta (colegio/deducciones) y fletes
 ├── conteo, faltantes   # Chequeo de inventario por rotación y panel de faltantes
+├── anular              # Anulación de un movimiento registrado por error
+├── mas-vendidos        # Ranking de productos por unidades o por valor
 ├── producto/           # Ficha y alta de producto
 └── carga-inicial       # Sesión de escaneo para inventario inicial
 components/             # ScannerView, BuscadorProducto, SyncManager, ui/
