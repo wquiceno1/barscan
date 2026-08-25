@@ -47,6 +47,10 @@ export default function RootLayout() {
         <Stack.Screen name="faltantes" options={{ title: 'Faltantes' }} />
         <Stack.Screen name="detalle/[id]" options={{ title: 'Detalle' }} />
         <Stack.Screen name="anular" options={{ title: 'Anular movimiento' }} />
+        <Stack.Screen
+          name="mas-vendidos"
+          options={{ title: 'Ventas por producto' }}
+        />
       </Stack>
       <StatusBar style="auto" />
     </SQLiteProvider>

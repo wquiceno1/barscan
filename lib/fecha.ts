@@ -74,3 +74,45 @@ export function rangoMes(mes: string): { desde: string; hasta: string } {
     hasta: `${mes}-${pad2(ultimoDia)}T23:59:59`,
   };
 }
+
+// --- Semana: se identifica por el lunes que la abre, como 'YYYY-MM-DD'. ---
+
+/** Lunes de la semana a la que pertenece el día dado. */
+export function inicioSemana(dia: string): string {
+  const d = diaADate(dia);
+  // getDay(): 0 = domingo. Se corre al lunes anterior (o al mismo si ya lo es).
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return dateADiaStr(d);
+}
+
+/** Semana actual, identificada por su lunes. */
+export function hoySemanaStr(): string {
+  return inicioSemana(hoyStr());
+}
+
+/** Suma (o resta) semanas a una semana dada por su lunes. */
+export function sumarSemanas(semana: string, delta: number): string {
+  return sumarDias(semana, delta * 7);
+}
+
+/** Límites ISO [desde, hasta] que cubren la semana completa (lunes a domingo). */
+export function rangoSemana(semana: string): { desde: string; hasta: string } {
+  return {
+    desde: `${semana}T00:00:00`,
+    hasta: `${sumarDias(semana, 6)}T23:59:59`,
+  };
+}
+
+/**
+ * Etiqueta legible de la semana: "17 – 23 de agosto", o "31 de agosto –
+ * 6 de septiembre" cuando cruza de mes.
+ */
+export function semanaLarga(semana: string): string {
+  const lunes = diaADate(semana);
+  const domingo = diaADate(sumarDias(semana, 6));
+  const mes = (d: Date) => d.toLocaleDateString('es-CO', { month: 'long' });
+  const mismoMes = lunes.getMonth() === domingo.getMonth();
+  return mismoMes
+    ? `${lunes.getDate()} – ${domingo.getDate()} de ${mes(domingo)}`
+    : `${lunes.getDate()} de ${mes(lunes)} – ${domingo.getDate()} de ${mes(domingo)}`;
+}

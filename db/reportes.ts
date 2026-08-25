@@ -219,16 +219,40 @@ export type FilaVenta = {
   total: number;
 };
 
+/** Por qué columna se ordena el ranking de vendidos. */
+export type MetricaVenta = 'unidades' | 'total';
+
+export type OrdenVentas = {
+  metrica: MetricaVenta;
+  direccion: 'desc' | 'asc';
+};
+
+// Whitelist: el ORDER BY se interpola, así que nunca puede venir del usuario.
+const COLUMNA_ORDEN: Record<MetricaVenta, string> = {
+  unidades: 'unidades',
+  total: 'total',
+};
+const DIRECCION_ORDEN: Record<OrdenVentas['direccion'], string> = {
+  desc: 'DESC',
+  asc: 'ASC',
+};
+
 /**
- * Productos vendidos, agrupados por código y ordenados por unidades (desc).
- * Sin `rango` es el histórico completo; con `rango` se limita al período
- * [desde, hasta] (ISO). El total sale siempre de la suma real de subtotales;
- * `precio_prom = round(total / unidades)`. El nombre usa el catálogo actual y,
- * si el producto ya no existe, cae al `nombre_snapshot` de la venta.
+ * Productos vendidos, agrupados por código. Sin `rango` es el histórico
+ * completo; con `rango` se limita al período [desde, hasta] (ISO). Por defecto
+ * ordena por unidades descendente. El total sale siempre de la suma real de
+ * subtotales; `precio_prom = round(total / unidades)`. El nombre usa el catálogo
+ * actual y, si el producto ya no existe, cae al `nombre_snapshot` de la venta.
+ *
+ * Las devoluciones son ventas con cantidad negativa, así que se netean solas:
+ * una unidad devuelta deja de contar como vendida. El `HAVING` descarta los
+ * productos que quedan en cero o en negativo (se devolvió todo lo vendido en el
+ * período), para que no encabecen la lista al ordenar de menor a mayor.
  */
 export async function productosVendidos(
   db: SQLiteDatabase,
-  rango?: { desde: string; hasta: string }
+  rango?: { desde: string; hasta: string },
+  orden: OrdenVentas = { metrica: 'unidades', direccion: 'desc' }
 ): Promise<{ filas: FilaVenta[]; total: number }> {
   const params: SQLiteBindValue[] = [];
   let filtro = '';
@@ -253,7 +277,9 @@ export async function productosVendidos(
      LEFT JOIN productos p ON p.barcode = i.barcode
      WHERE t.tipo = 'venta'${filtro}
      GROUP BY i.barcode
-     ORDER BY unidades DESC`,
+     HAVING SUM(i.cantidad) > 0
+     ORDER BY ${COLUMNA_ORDEN[orden.metrica]} ${DIRECCION_ORDEN[orden.direccion]},
+              unidades DESC`,
     ...params
   );
 
@@ -269,6 +295,86 @@ export async function productosVendidos(
     };
   });
   return { filas, total };
+}
+
+export type FilaSinVenta = {
+  barcode: string;
+  nombre: string;
+  stock_actual: number;
+  precio: number;
+  /** stock_actual * precio: plata quieta en el estante. */
+  valor_stock: number;
+  /** Última venta real del producto (histórica, no del período). null = nunca. */
+  ultima_venta: string | null;
+};
+
+/**
+ * Productos activos que NO se vendieron en el período (o en toda la historia si
+ * no se pasa `rango`). Es el complemento exacto de `productosVendidos` sobre el
+ * catálogo activo: un producto está en una lista o en la otra, nunca en las dos.
+ *
+ * "No se vendió" incluye el caso de haberse devuelto entero: si las unidades
+ * netas del período son cero o menos, no se vendió nada, y por eso se usa el
+ * mismo criterio (<= 0) que el `HAVING` del ranking.
+ *
+ * `ultima_venta` mira toda la historia a propósito, no el período: lo que se
+ * quiere saber es si el producto nunca se vendió o si dejó de venderse, y para
+ * eso una fecha vieja dice más que un cero. Ignora las líneas negativas para que
+ * una devolución no se confunda con una venta.
+ *
+ * Ordena por plata inmovilizada (stock × precio) descendente: primero lo que más
+ * capital tiene detenido. Los productos dados de baja (activo = 0) quedan fuera:
+ * se desactivaron a propósito.
+ */
+export async function productosSinVentas(
+  db: SQLiteDatabase,
+  rango?: { desde: string; hasta: string }
+): Promise<{ filas: FilaSinVenta[]; valorInmovilizado: number }> {
+  const params: SQLiteBindValue[] = [];
+  let filtro = '';
+  if (rango) {
+    filtro = ' AND t.fecha_hora >= ? AND t.fecha_hora <= ?';
+    params.push(rango.desde, rango.hasta);
+  }
+
+  const rows = await db.getAllAsync<{
+    barcode: string;
+    nombre: string;
+    stock_actual: number;
+    precio: number;
+    ultima_venta: string | null;
+  }>(
+    `SELECT
+       p.barcode,
+       p.nombre,
+       p.stock_actual,
+       p.precio,
+       (SELECT MAX(t2.fecha_hora)
+          FROM transaccion_items i2
+          JOIN transacciones t2 ON t2.id = i2.transaccion_id
+         WHERE i2.barcode = p.barcode
+           AND t2.tipo = 'venta'
+           AND i2.cantidad > 0) AS ultima_venta
+     FROM productos p
+     WHERE p.activo = 1
+       AND COALESCE((
+         SELECT SUM(i.cantidad)
+           FROM transaccion_items i
+           JOIN transacciones t ON t.id = i.transaccion_id
+          WHERE i.barcode = p.barcode
+            AND t.tipo = 'venta'${filtro}
+       ), 0) <= 0
+     ORDER BY p.stock_actual * p.precio DESC, p.nombre ASC`,
+    ...params
+  );
+
+  let valorInmovilizado = 0;
+  const filas = rows.map((r) => {
+    const valor_stock = r.stock_actual * r.precio;
+    valorInmovilizado += valor_stock;
+    return { ...r, valor_stock };
+  });
+  return { filas, valorInmovilizado };
 }
 
 /**

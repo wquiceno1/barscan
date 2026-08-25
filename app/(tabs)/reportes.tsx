@@ -609,6 +609,21 @@ export default function ReportesScreen() {
           </Card>
         )}
 
+        <Text style={styles.section}>Ventas por producto</Text>
+        <Card style={{ gap: spacing.sm }}>
+          <Text style={styles.pdfHelp}>
+            Ranking de los más vendidos por unidades o por plata, y la lista de
+            los que no se vendieron. Con filtro de semana, mes o todo el
+            histórico.
+          </Text>
+          <Button
+            label="Ver ventas por producto"
+            icon="podium-outline"
+            variant="secondary"
+            onPress={() => router.push('/mas-vendidos')}
+          />
+        </Card>
+
         <Text style={styles.section}>Reportes imprimibles</Text>
         <Card style={{ gap: spacing.sm }}>
           <Text style={styles.pdfHelp}>
