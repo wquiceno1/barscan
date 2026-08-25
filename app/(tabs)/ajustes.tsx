@@ -4,7 +4,13 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import type { User } from 'firebase/auth';
-import { Button, Card, Input, Screen } from '../../components/ui';
+import {
+  Button,
+  Card,
+  Input,
+  ProgressBar,
+  Screen,
+} from '../../components/ui';
 import {
   getConteoMuestra,
   getMargenGeneral,
@@ -27,9 +33,8 @@ import {
   marcarTodoPendienteRespaldo,
   respaldar,
   restaurar,
-  vaciarRespaldoRemoto,
+  type ProgresoRespaldo,
 } from '../../lib/backup';
-import { vaciarDatosLocales } from '../../db/mantenimiento';
 import { toast } from '../../lib/feedback';
 import { colors, font, spacing } from '../../theme/tokens';
 
@@ -72,8 +77,9 @@ export default function AjustesScreen() {
   const [ultimo, setUltimo] = useState<string | null>(null);
   const [pendientes, setPendientes] = useState(0);
   const [restaurando, setRestaurando] = useState(false);
-  const [vaciando, setVaciando] = useState(false);
-  const [vaciandoTodo, setVaciandoTodo] = useState(false);
+  // Avance de la operación larga en curso (reconstruir o restaurar); null
+  // cuando no hay ninguna.
+  const [progreso, setProgreso] = useState<ProgresoRespaldo | null>(null);
   // Guarda la contraseña de la sesión actual para poder activar la huella
   // sin volver a pedirla. Se limpia al cerrar sesión.
   const pwRef = useRef<string | null>(null);
@@ -193,9 +199,10 @@ export default function AjustesScreen() {
           text: 'Reconstruir',
           onPress: async () => {
             setReconstruyendo(true);
+            setProgreso({ fase: 'Preparando', valor: 0, detalle: null });
             try {
               const pendientesMarcados = await marcarTodoPendienteRespaldo(db);
-              const n = await respaldar(db);
+              const n = await respaldar(db, setProgreso);
               await refrescar();
               toast(
                 n > 0
@@ -206,6 +213,7 @@ export default function AjustesScreen() {
               Alert.alert('No se pudo reconstruir', mensajeError(e));
             } finally {
               setReconstruyendo(false);
+              setProgreso(null);
             }
           },
         },
@@ -223,14 +231,16 @@ export default function AjustesScreen() {
           text: 'Restaurar',
           onPress: async () => {
             setRestaurando(true);
+            setProgreso({ fase: 'Conectando', valor: 0, detalle: null });
             try {
-              const n = await restaurar(db);
+              const n = await restaurar(db, setProgreso);
               await refrescar();
               toast(`Restauración completa (${n} registros)`);
             } catch (e) {
               Alert.alert('No se pudo restaurar', mensajeError(e));
             } finally {
               setRestaurando(false);
+              setProgreso(null);
             }
           },
         },
@@ -262,64 +272,6 @@ export default function AjustesScreen() {
     pwRef.current = null;
     await refrescar();
     toast('Sesión cerrada');
-  };
-
-  const vaciarBase = () => {
-    Alert.alert(
-      'Vaciar base de datos',
-      'Esto borra todos los productos y movimientos guardados en este teléfono. No se puede deshacer.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Vaciar',
-          style: 'destructive',
-          onPress: async () => {
-            setVaciando(true);
-            try {
-              await vaciarDatosLocales(db);
-              await refrescar();
-              toast('Base de datos vaciada');
-            } catch (e) {
-              Alert.alert('No se pudo vaciar', mensajeError(e));
-            } finally {
-              setVaciando(false);
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const vaciarLocalYNube = () => {
-    Alert.alert(
-      'Vaciar telefono y nube',
-      'Esto borrara permanentemente los productos, movimientos y respaldo en Firestore. Primero se vaciara la nube y luego este telefono. No se puede deshacer.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Vaciar todo',
-          style: 'destructive',
-          onPress: async () => {
-            setVaciandoTodo(true);
-            try {
-              const borradosRemotos = await vaciarRespaldoRemoto();
-              await vaciarDatosLocales(db);
-              await setConfig(db, 'last_backup_at', '');
-              await refrescar();
-              toast(
-                borradosRemotos > 0
-                  ? `Telefono y nube vaciados (${borradosRemotos} docs remotos)`
-                  : 'Telefono y nube vaciados'
-              );
-            } catch (e) {
-              Alert.alert('No se pudo vaciar todo', mensajeError(e));
-            } finally {
-              setVaciandoTodo(false);
-            }
-          },
-        },
-      ]
-    );
   };
 
   return (
@@ -410,6 +362,13 @@ export default function AjustesScreen() {
               Último respaldo: {fechaLegible(ultimo)}
             </Text>
             <Text style={styles.help}>Cambios pendientes: {pendientes}</Text>
+            {progreso && (
+              <ProgressBar
+                valor={progreso.valor}
+                etiqueta={progreso.fase}
+                detalle={progreso.detalle ?? undefined}
+              />
+            )}
             <Button
               label="Respaldar ahora"
               icon="cloud-upload"
@@ -502,41 +461,20 @@ export default function AjustesScreen() {
 
       <Card style={[styles.respaldo, { gap: spacing.sm }]}>
         <View style={styles.head}>
-          <Ionicons name="trash-outline" size={20} color={colors.danger} />
-          <Text style={styles.title}>Zona de pruebas</Text>
+          <Ionicons name="create-outline" size={20} color={colors.ajuste} />
+          <Text style={styles.title}>Corregir movimientos</Text>
         </View>
         <Text style={styles.help}>
-          Borra productos y movimientos guardados en este teléfono. Útil
-          antes y después de una prueba de campo.
-          {usuario &&
-            ' Tienes sesión iniciada: si hay internet, los datos podrían volver a sincronizarse solos desde el respaldo. Cierra sesión antes si quieres una base completamente vacía.'}
+          Anula una venta, compra o ajuste que se registró por error. Devuelve
+          el stock a como estaba y borra la operación también del respaldo en la
+          nube.
         </Text>
         <Button
-          label="Vaciar base de datos"
-          icon="trash"
-          variant="danger"
-          loading={vaciando}
-          onPress={vaciarBase}
+          label="Anular un movimiento"
+          icon="backspace"
+          variant="secondary"
+          onPress={() => router.push('/anular')}
         />
-        {usuario ? (
-          <>
-            <Text style={styles.help}>
-              Si quieres un reinicio total de pruebas, este boton borra tambien
-              el respaldo remoto de Firestore antes de vaciar el telefono.
-            </Text>
-            <Button
-              label="Vaciar telefono y nube"
-              icon="nuclear"
-              variant="danger"
-              loading={vaciandoTodo}
-              onPress={vaciarLocalYNube}
-            />
-          </>
-        ) : (
-          <Text style={styles.help}>
-            Inicia sesion para poder borrar tambien el respaldo remoto.
-          </Text>
-        )}
       </Card>
     </Screen>
   );
