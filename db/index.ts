@@ -1,7 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 export const DB_NAME = 'inventario.db';
-const TARGET_VERSION = 6;
+const TARGET_VERSION = 7;
 
 /**
  * Migraciones con el patrón PRAGMA user_version. Se ejecuta desde el `onInit`
@@ -157,6 +157,28 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase): Promise<void> {
     );
     await db.execAsync(`PRAGMA user_version = 6`);
     userVersion = 6;
+  }
+
+  if (userVersion < 7) {
+    // Anulación de movimientos: al borrar una transacción localmente no queda
+    // fila que subir, así que el borrado se registra como "lápida" y el push la
+    // convierte en un delete en Firestore. Sin esto, borrar en el teléfono no
+    // llegaría nunca a la nube (y borrar en la nube tampoco llega al teléfono,
+    // porque `restaurar` es solo INSERT OR REPLACE). Las lápidas se conservan
+    // aunque ya estén sincronizadas: así una reconstrucción completa del
+    // respaldo vuelve a aplicar los borrados.
+    await db.execAsync(
+      `CREATE TABLE IF NOT EXISTS eliminaciones (
+         coleccion  TEXT NOT NULL,
+         doc_id     TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         synced     INTEGER NOT NULL DEFAULT 0,
+         PRIMARY KEY (coleccion, doc_id)
+       );
+       CREATE INDEX IF NOT EXISTS idx_eliminaciones_unsynced ON eliminaciones(synced) WHERE synced = 0;`
+    );
+    await db.execAsync(`PRAGMA user_version = 7`);
+    userVersion = 7;
   }
 
   if (userVersion !== TARGET_VERSION) {

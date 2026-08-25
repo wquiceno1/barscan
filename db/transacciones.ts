@@ -153,6 +153,9 @@ export type FiltroHistorial = {
   // tengan al menos una línea con ese producto, por barcode exacto (scan) o por
   // nombre_snapshot con LIKE tokenizado (texto, palabras en cualquier orden).
   producto?: string;
+  // Tope de filas devueltas (la pantalla de anulación no necesita el historial
+  // completo, solo lo bastante reciente para encontrar el movimiento).
+  limite?: number;
 };
 
 export async function listarTransacciones(
@@ -197,7 +200,9 @@ export async function listarTransacciones(
   const sql =
     'SELECT * FROM transacciones' +
     (where.length ? ` WHERE ${where.join(' AND ')}` : '') +
-    ' ORDER BY fecha_hora DESC';
+    ' ORDER BY fecha_hora DESC' +
+    (filtro.limite ? ' LIMIT ?' : '');
+  if (filtro.limite) params.push(filtro.limite);
   return db.getAllAsync<Transaccion>(sql, ...params);
 }
 
@@ -215,4 +220,89 @@ export async function getTransaccion(
     id
   );
   return { tx, items };
+}
+
+export type ResumenAnulacion = {
+  tipo: TipoTransaccion;
+  fecha_hora: string;
+  total: number;
+  lineas: number;
+  productos: number;
+};
+
+/**
+ * Anula una operación: revierte el stock que aplicó, borra la transacción con
+ * sus ítems y deja una lápida por cada documento para que el respaldo replique
+ * el borrado en Firestore (ver migración v7). Todo atómico.
+ *
+ * OJO: en una compra, `finalizarTransaccion` pisa el costo y el precio del
+ * producto y el valor anterior no se guarda en ninguna parte, así que anularla
+ * NO los devuelve: hay que corregirlos a mano si hace falta. El stock sí vuelve
+ * exactamente a donde estaba.
+ */
+export async function anularTransaccion(
+  db: SQLiteDatabase,
+  id: string
+): Promise<ResumenAnulacion> {
+  const encontrada = await getTransaccion(db, id);
+  if (!encontrada) throw new Error('La operación ya no existe.');
+  const { tx, items } = encontrada;
+
+  // Un ajuste que sanó el libro es la contraparte contable de un faltante:
+  // borrarlo dejaría el faltante apuntando a la nada y el stock descuadrado.
+  const ligado = await db.getFirstAsync<{ n: number }>(
+    'SELECT COUNT(*) AS n FROM faltantes WHERE ajuste_id = ?',
+    id
+  );
+  if ((ligado?.n ?? 0) > 0) {
+    throw new Error(
+      'Este ajuste corrigió un faltante registrado. Resuelve el faltante antes de anularlo.'
+    );
+  }
+
+  const ts = nowIso();
+  const esSalida = tx.categoria === 'colegio' || tx.categoria === 'deduccion';
+
+  await db.withTransactionAsync(async () => {
+    for (const l of items) {
+      // Revertir = aplicar el delta opuesto al que puso `finalizarTransaccion`,
+      // reusando la misma función para no duplicar la regla de signos.
+      await db.runAsync(
+        `UPDATE productos
+           SET stock_actual = stock_actual - ?, updated_at = ?, synced = 0
+         WHERE barcode = ?`,
+        deltaStock(tx.tipo, l.cantidad, esSalida),
+        ts,
+        l.barcode
+      );
+      await db.runAsync(
+        `INSERT OR REPLACE INTO eliminaciones
+           (coleccion, doc_id, created_at, synced)
+         VALUES ('transaccion_items', ?, ?, 0)`,
+        l.id,
+        ts
+      );
+    }
+
+    await db.runAsync(
+      'DELETE FROM transaccion_items WHERE transaccion_id = ?',
+      id
+    );
+    await db.runAsync('DELETE FROM transacciones WHERE id = ?', id);
+    await db.runAsync(
+      `INSERT OR REPLACE INTO eliminaciones
+         (coleccion, doc_id, created_at, synced)
+       VALUES ('transacciones', ?, ?, 0)`,
+      id,
+      ts
+    );
+  });
+
+  return {
+    tipo: tx.tipo,
+    fecha_hora: tx.fecha_hora,
+    total: tx.total,
+    lineas: items.length,
+    productos: new Set(items.map((l) => l.barcode)).size,
+  };
 }
