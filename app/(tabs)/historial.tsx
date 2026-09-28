@@ -1,13 +1,28 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  FlatList,
+  Keyboard,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import ScannerView from '../../components/ScannerView';
+import SugerenciasHistorial, {
+  type SeleccionHistorial,
+} from '../../components/SugerenciasHistorial';
 import { EmptyState, Input, Screen } from '../../components/ui';
+import { getProducto } from '../../db/productos';
 import { etiquetaSalida } from '../../db/salidas';
-import { listarTransacciones } from '../../db/transacciones';
+import {
+  listarTransacciones,
+  type FiltroHistorial,
+} from '../../db/transacciones';
 import type { TipoTransaccion, Transaccion } from '../../db/types';
 import { formatCOP } from '../../db/util';
 import {
@@ -48,6 +63,52 @@ const COLOR: Record<TipoTransaccion, string> = {
   ajuste: colors.ajuste,
 };
 
+/** Cómo filtra el historial cada tipo de selección del buscador. */
+function filtroDeSeleccion(s: SeleccionHistorial | null): FiltroHistorial {
+  if (!s) return {};
+  switch (s.por) {
+    case 'texto':
+      return { producto: s.texto };
+    case 'producto':
+      return { barcode: s.barcode };
+    case 'contraparte':
+      return {
+        contraparte: {
+          nombres: s.contraparte.nombres,
+          tipo: s.contraparte.tipo,
+        },
+      };
+  }
+}
+
+/** Ícono y texto con que se muestra la selección en el campo de búsqueda. */
+function vistaDeSeleccion(s: SeleccionHistorial): {
+  icono: keyof typeof Ionicons.glyphMap;
+  texto: string;
+} {
+  switch (s.por) {
+    case 'texto':
+      return { icono: 'search', texto: `Contiene «${s.texto}»` };
+    case 'producto':
+      return { icono: 'cube-outline', texto: s.nombre };
+    case 'contraparte':
+      return s.contraparte.tipo === 'venta'
+        ? { icono: 'person-outline', texto: `${s.contraparte.nombre} · cliente` }
+        : {
+            icono: 'storefront-outline',
+            texto: `${s.contraparte.nombre} · proveedor`,
+          };
+  }
+}
+
+/** Texto con el que se reabre el buscador cuando ya hay una búsqueda activa. */
+function textoDeSeleccion(s: SeleccionHistorial | null): string {
+  if (!s) return '';
+  if (s.por === 'texto') return s.texto;
+  if (s.por === 'producto') return s.nombre;
+  return s.contraparte.nombre;
+}
+
 export default function HistorialScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
@@ -56,7 +117,11 @@ export default function HistorialScreen() {
   const [dia, setDia] = useState(hoyStr());
   const [mes, setMes] = useState(hoyMesStr());
   const [mostrarPicker, setMostrarPicker] = useState(false);
-  const [producto, setProducto] = useState('');
+  const [seleccion, setSeleccion] = useState<SeleccionHistorial | null>(null);
+  // Texto del campo mientras se busca. Con `editando`, en lugar de la lista de
+  // operaciones se muestran las sugerencias, en esta misma pantalla.
+  const [busqueda, setBusqueda] = useState('');
+  const [editando, setEditando] = useState(false);
   const [scannerVisible, setScannerVisible] = useState(false);
   const [alcanceVisible, setAlcanceVisible] = useState(false);
   const [items, setItems] = useState<Transaccion[]>([]);
@@ -64,12 +129,34 @@ export default function HistorialScreen() {
   const esHoy = dia === hoyStr();
   const esMesActual = mes === hoyMesStr();
   // El selector de alcance solo importa cuando estás buscando. Es "pegajoso":
-  // aparece al enfocar el input o al escanear, y queda visible (aunque toques un
-  // chip o salgas del input) hasta que cierres la búsqueda con la X.
-  const mostrarAlcance = alcanceVisible || producto.trim().length > 0;
+  // aparece al empezar a buscar o al escanear, y queda visible (aunque toques
+  // un chip) hasta que cierres la búsqueda con la X.
+  const mostrarAlcance = alcanceVisible || editando || seleccion != null;
+
+  // Tocar el campo muestra las sugerencias, con el texto de la búsqueda activa.
+  const empezarBusqueda = () => {
+    setBusqueda(textoDeSeleccion(seleccion));
+    setEditando(true);
+    setAlcanceVisible(true);
+  };
+
+  const elegir = (s: SeleccionHistorial) => {
+    Keyboard.dismiss();
+    setSeleccion(s);
+    setEditando(false);
+  };
+
+  // "Buscar" en el teclado sin elegir una sugerencia = todo lo que contenga.
+  const buscarTexto = () => {
+    const texto = busqueda.trim();
+    if (texto) elegir({ por: 'texto', texto });
+  };
 
   const cerrarBusqueda = () => {
-    setProducto('');
+    Keyboard.dismiss();
+    setSeleccion(null);
+    setBusqueda('');
+    setEditando(false);
     setAlcanceVisible(false);
   };
   const totalPeriodo =
@@ -85,35 +172,74 @@ export default function HistorialScreen() {
         ? rangoMes(mes)
         : null;
 
-  // Recarga al cambiar alcance/período/tipo/producto y al volver a la pantalla.
+  // Recarga al cambiar alcance/período/tipo/búsqueda y al volver a la pantalla.
   useFocusEffect(
     useCallback(() => {
       listarTransacciones(db, {
         ...(rango ?? {}),
         ...(filtro === 'todos' ? {} : { tipo: filtro }),
-        ...(producto.trim() ? { producto } : {}),
+        ...filtroDeSeleccion(seleccion),
       }).then(setItems);
       // rango es derivado de alcance/dia/mes; se listan esas fuentes.
-    }, [db, filtro, alcance, dia, mes, producto])
+    }, [db, filtro, alcance, dia, mes, seleccion])
   );
 
-  const buscarPorCodigo = (code: string) => {
+  // Escanear elige el producto directamente. El nombre es solo para mostrar:
+  // el filtro va por código, así que un código que ya no está en el catálogo
+  // igual encuentra su historial.
+  const buscarPorCodigo = async (code: string) => {
     setScannerVisible(false);
     setAlcanceVisible(true);
-    setProducto(code);
+    const prod = await getProducto(db, code);
+    elegir({ por: 'producto', barcode: code, nombre: prod?.nombre ?? code });
   };
+
+  const vista = seleccion ? vistaDeSeleccion(seleccion) : null;
+
+  // Mientras se buscan sugerencias no se ve la navegación de fechas: esta línea
+  // dice a qué período apunta el alcance elegido.
+  const detalleAlcance =
+    alcance === 'dia'
+      ? esHoy
+        ? 'Operaciones de hoy'
+        : `Operaciones del ${fechaLarga(dia)}`
+      : alcance === 'mes'
+        ? `Operaciones de ${mesLargo(mes)}`
+        : 'Todo el historial';
 
   return (
     <Screen padded>
       <View style={styles.searchRow}>
-        <View style={styles.searchInput}>
-          <Input
-            placeholder="Buscar por producto…"
-            value={producto}
-            onChangeText={setProducto}
-            onFocus={() => setAlcanceVisible(true)}
-          />
-        </View>
+        {editando ? (
+          <View style={styles.searchInput}>
+            <Input
+              placeholder="Producto, cliente o proveedor…"
+              value={busqueda}
+              onChangeText={setBusqueda}
+              autoFocus
+              selectTextOnFocus
+              returnKeyType="search"
+              onSubmitEditing={buscarTexto}
+            />
+          </View>
+        ) : (
+          <Pressable
+            onPress={empezarBusqueda}
+            style={({ pressed }) => [styles.campo, pressed && styles.pressed]}
+          >
+            <Ionicons
+              name={vista?.icono ?? 'search'}
+              size={18}
+              color={vista ? colors.primary : colors.textMuted}
+            />
+            <Text
+              style={[styles.campoTexto, !vista && styles.campoPlaceholder]}
+              numberOfLines={1}
+            >
+              {vista?.texto ?? 'Buscar producto, cliente o proveedor…'}
+            </Text>
+          </Pressable>
+        )}
         {mostrarAlcance && (
           <Pressable
             onPress={cerrarBusqueda}
@@ -172,178 +298,191 @@ export default function HistorialScreen() {
         </View>
       )}
 
-      {alcance === 'dia' && (
+      {editando ? (
         <>
-          <View style={styles.diaNav}>
-            <Pressable
-              onPress={() => setDia((x) => sumarDias(x, -1))}
-              hitSlop={8}
-              style={styles.navBtn}
-            >
-              <Ionicons name="chevron-back" size={22} color={colors.text} />
-            </Pressable>
-            <Pressable
-              onPress={() => setMostrarPicker(true)}
-              style={styles.diaFechaBtn}
-            >
-              <Ionicons name="calendar-outline" size={16} color={colors.primary} />
-              <Text style={styles.diaFecha}>
-                {esHoy ? 'Hoy' : fechaLarga(dia)}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setDia((x) => sumarDias(x, 1))}
-              disabled={esHoy}
-              hitSlop={8}
-              style={[styles.navBtn, esHoy && styles.navBtnOff]}
-            >
-              <Ionicons name="chevron-forward" size={22} color={colors.text} />
-            </Pressable>
-          </View>
-          {!esHoy && (
-            <Pressable onPress={() => setDia(hoyStr())} style={styles.hoyBtn}>
-              <Ionicons name="today-outline" size={14} color={colors.primary} />
-              <Text style={styles.hoyBtnText}>Volver a hoy</Text>
-            </Pressable>
-          )}
-          {mostrarPicker && (
-            <DateTimePicker
-              value={diaADate(dia)}
-              mode="date"
-              maximumDate={new Date()}
-              onChange={(event, selected) => {
-                setMostrarPicker(false);
-                if (event.type === 'set' && selected) {
-                  setDia(dateADiaStr(selected));
-                }
-              }}
-            />
-          )}
+          <Text style={styles.detalleAlcance}>{detalleAlcance}</Text>
+          <SugerenciasHistorial busqueda={busqueda} onElegir={elegir} />
         </>
-      )}
-
-      {alcance === 'mes' && (
+      ) : (
         <>
-          <View style={styles.diaNav}>
-            <Pressable
-              onPress={() => setMes((x) => sumarMeses(x, -1))}
-              hitSlop={8}
-              style={styles.navBtn}
-            >
-              <Ionicons name="chevron-back" size={22} color={colors.text} />
-            </Pressable>
-            <View style={styles.diaFechaBtn}>
-              <Ionicons name="calendar-outline" size={16} color={colors.primary} />
-              <Text style={styles.diaFecha}>{mesLargo(mes)}</Text>
-            </View>
-            <Pressable
-              onPress={() => setMes((x) => sumarMeses(x, 1))}
-              disabled={esMesActual}
-              hitSlop={8}
-              style={[styles.navBtn, esMesActual && styles.navBtnOff]}
-            >
-              <Ionicons name="chevron-forward" size={22} color={colors.text} />
-            </Pressable>
-          </View>
-          {!esMesActual && (
-            <Pressable
-              onPress={() => setMes(hoyMesStr())}
-              style={styles.hoyBtn}
-            >
-              <Ionicons name="today-outline" size={14} color={colors.primary} />
-              <Text style={styles.hoyBtnText}>Volver a este mes</Text>
-            </Pressable>
-          )}
-        </>
-      )}
-
-      <View style={styles.filtros}>
-        {TIPOS.map((t) => {
-          const on = filtro === t;
-          return (
-            <Pressable
-              key={t}
-              onPress={() => setFiltro(t)}
-              style={[styles.chip, on && styles.chipOn]}
-            >
-              <Text style={[styles.chipText, on && styles.chipTextOn]}>
-                {t === 'todos' ? 'Todos' : ETIQUETA[t]}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {(filtro === 'venta' || filtro === 'compra') && (
-        <View
-          style={[
-            styles.totalBar,
-            filtro === 'compra' && styles.totalBarCompra,
-          ]}
-        >
-          <Text style={styles.totalBarLabel}>
-            {`Total ${filtro === 'venta' ? 'ventas' : 'compras'} ${
-              alcance === 'dia' ? 'del día' : alcance === 'mes' ? 'del mes' : 'histórico'
-            }`}
-          </Text>
-          <Text
-            style={[
-              styles.totalBarValue,
-              filtro === 'compra' && styles.totalBarValueCompra,
-            ]}
-          >
-            {formatCOP(totalPeriodo)}
-          </Text>
-        </View>
-      )}
-
-      <FlatList
-        data={items}
-        keyExtractor={(t) => t.id}
-        contentContainerStyle={{ gap: spacing.sm }}
-        ListEmptyComponent={
-          <EmptyState
-            icon="time-outline"
-            title={
-              producto.trim()
-                ? 'Sin resultados para ese producto'
-                : 'Sin operaciones en el período'
-            }
-            subtitle={
-              producto.trim()
-                ? 'Ninguna operación de este período incluye ese producto. Probá ampliar el alcance a Mes o Todo.'
-                : 'Las ventas, compras y ajustes del período elegido aparecerán aquí.'
-            }
-          />
-        }
-        renderItem={({ item }) => {
-          const salida = etiquetaSalida(item.categoria, item.subcategoria);
-          const badgeColor = salida ? colors.salida : COLOR[item.tipo];
-          const icono = salida ? 'exit' : ICONO[item.tipo];
-          const etiqueta = salida ?? ETIQUETA[item.tipo];
-          const mostrarTotal = item.tipo !== 'ajuste' || salida != null;
-          return (
-            <Pressable
-              style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-              onPress={() => router.push(`/detalle/${item.id}`)}
-            >
-              <View style={[styles.badge, { backgroundColor: badgeColor }]}>
-                <Ionicons name={icono} size={18} color={colors.textInverse} />
+          {alcance === 'dia' && (
+            <>
+              <View style={styles.diaNav}>
+                <Pressable
+                  onPress={() => setDia((x) => sumarDias(x, -1))}
+                  hitSlop={8}
+                  style={styles.navBtn}
+                >
+                  <Ionicons name="chevron-back" size={22} color={colors.text} />
+                </Pressable>
+                <Pressable
+                  onPress={() => setMostrarPicker(true)}
+                  style={styles.diaFechaBtn}
+                >
+                  <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+                  <Text style={styles.diaFecha}>
+                    {esHoy ? 'Hoy' : fechaLarga(dia)}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setDia((x) => sumarDias(x, 1))}
+                  disabled={esHoy}
+                  hitSlop={8}
+                  style={[styles.navBtn, esHoy && styles.navBtnOff]}
+                >
+                  <Ionicons name="chevron-forward" size={22} color={colors.text} />
+                </Pressable>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.tipo}>
-                  {etiqueta}
-                  {item.cliente_proveedor ? ` · ${item.cliente_proveedor}` : ''}
-                </Text>
-                <Text style={styles.fecha}>{item.fecha_hora.slice(11, 16)}</Text>
-              </View>
-              {mostrarTotal && (
-                <Text style={styles.total}>{formatCOP(item.total)}</Text>
+              {!esHoy && (
+                <Pressable onPress={() => setDia(hoyStr())} style={styles.hoyBtn}>
+                  <Ionicons name="today-outline" size={14} color={colors.primary} />
+                  <Text style={styles.hoyBtnText}>Volver a hoy</Text>
+                </Pressable>
               )}
-            </Pressable>
-          );
-        }}
-      />
+              {mostrarPicker && (
+                <DateTimePicker
+                  value={diaADate(dia)}
+                  mode="date"
+                  maximumDate={new Date()}
+                  onChange={(event, selected) => {
+                    setMostrarPicker(false);
+                    if (event.type === 'set' && selected) {
+                      setDia(dateADiaStr(selected));
+                    }
+                  }}
+                />
+              )}
+            </>
+          )}
+
+          {alcance === 'mes' && (
+            <>
+              <View style={styles.diaNav}>
+                <Pressable
+                  onPress={() => setMes((x) => sumarMeses(x, -1))}
+                  hitSlop={8}
+                  style={styles.navBtn}
+                >
+                  <Ionicons name="chevron-back" size={22} color={colors.text} />
+                </Pressable>
+                <View style={styles.diaFechaBtn}>
+                  <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+                  <Text style={styles.diaFecha}>{mesLargo(mes)}</Text>
+                </View>
+                <Pressable
+                  onPress={() => setMes((x) => sumarMeses(x, 1))}
+                  disabled={esMesActual}
+                  hitSlop={8}
+                  style={[styles.navBtn, esMesActual && styles.navBtnOff]}
+                >
+                  <Ionicons name="chevron-forward" size={22} color={colors.text} />
+                </Pressable>
+              </View>
+              {!esMesActual && (
+                <Pressable
+                  onPress={() => setMes(hoyMesStr())}
+                  style={styles.hoyBtn}
+                >
+                  <Ionicons name="today-outline" size={14} color={colors.primary} />
+                  <Text style={styles.hoyBtnText}>Volver a este mes</Text>
+                </Pressable>
+              )}
+            </>
+          )}
+
+          <View style={styles.filtros}>
+            {TIPOS.map((t) => {
+              const on = filtro === t;
+              return (
+                <Pressable
+                  key={t}
+                  onPress={() => setFiltro(t)}
+                  style={[styles.chip, on && styles.chipOn]}
+                >
+                  <Text style={[styles.chipText, on && styles.chipTextOn]}>
+                    {t === 'todos' ? 'Todos' : ETIQUETA[t]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {(filtro === 'venta' || filtro === 'compra') && (
+            <View
+              style={[
+                styles.totalBar,
+                filtro === 'compra' && styles.totalBarCompra,
+              ]}
+            >
+              <Text style={styles.totalBarLabel}>
+                {`Total ${filtro === 'venta' ? 'ventas' : 'compras'} ${
+                  alcance === 'dia' ? 'del día' : alcance === 'mes' ? 'del mes' : 'histórico'
+                }`}
+              </Text>
+              <Text
+                style={[
+                  styles.totalBarValue,
+                  filtro === 'compra' && styles.totalBarValueCompra,
+                ]}
+              >
+                {formatCOP(totalPeriodo)}
+              </Text>
+            </View>
+          )}
+
+          <FlatList
+            data={items}
+            keyExtractor={(t) => t.id}
+            contentContainerStyle={{ gap: spacing.sm }}
+            ListEmptyComponent={
+              <EmptyState
+                icon="time-outline"
+                title={
+                  seleccion?.por === 'contraparte'
+                    ? `Sin operaciones de ${seleccion.contraparte.nombre}`
+                    : seleccion
+                      ? 'Sin resultados para ese producto'
+                      : 'Sin operaciones en el período'
+                }
+                subtitle={
+                  seleccion?.por === 'contraparte'
+                    ? `No hay ${seleccion.contraparte.tipo === 'venta' ? 'ventas' : 'compras'} a su nombre en este período. Probá ampliar el alcance a Mes o Todo.`
+                    : seleccion
+                      ? 'Ninguna operación de este período incluye ese producto. Probá ampliar el alcance a Mes o Todo.'
+                      : 'Las ventas, compras y ajustes del período elegido aparecerán aquí.'
+                }
+              />
+            }
+            renderItem={({ item }) => {
+              const salida = etiquetaSalida(item.categoria, item.subcategoria);
+              const badgeColor = salida ? colors.salida : COLOR[item.tipo];
+              const icono = salida ? 'exit' : ICONO[item.tipo];
+              const etiqueta = salida ?? ETIQUETA[item.tipo];
+              const mostrarTotal = item.tipo !== 'ajuste' || salida != null;
+              return (
+                <Pressable
+                  style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+                  onPress={() => router.push(`/detalle/${item.id}`)}
+                >
+                  <View style={[styles.badge, { backgroundColor: badgeColor }]}>
+                    <Ionicons name={icono} size={18} color={colors.textInverse} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.tipo}>
+                      {etiqueta}
+                      {item.cliente_proveedor ? ` · ${item.cliente_proveedor}` : ''}
+                    </Text>
+                    <Text style={styles.fecha}>{item.fecha_hora.slice(11, 16)}</Text>
+                  </View>
+                  {mostrarTotal && (
+                    <Text style={styles.total}>{formatCOP(item.total)}</Text>
+                  )}
+                </Pressable>
+              );
+            }}
+          />
+        </>
+      )}
     </Screen>
   );
 }
@@ -356,6 +495,22 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   searchInput: { flex: 1 },
+  // Muestra la búsqueda activa (o el placeholder); al tocarlo aparece el campo
+  // de texto con las sugerencias.
+  campo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  campoTexto: { flex: 1, fontSize: font.md, color: colors.text },
+  campoPlaceholder: { color: colors.textMuted },
   clearBtn: {
     width: 32,
     height: 32,
@@ -421,6 +576,12 @@ const styles = StyleSheet.create({
   },
   alcanceText: { fontSize: font.sm, fontWeight: '700', color: colors.textMuted },
   alcanceTextOn: { color: colors.textInverse },
+  detalleAlcance: {
+    fontSize: font.xs,
+    color: colors.textMuted,
+    marginTop: -spacing.xs,
+    marginBottom: spacing.sm,
+  },
   diaNav: {
     flexDirection: 'row',
     alignItems: 'center',

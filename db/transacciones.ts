@@ -148,11 +148,18 @@ export type FiltroHistorial = {
   tipo?: TipoTransaccion;
   desde?: string; // ISO
   hasta?: string; // ISO
-  contraparte?: string;
+  // Cliente o proveedor elegido en el buscador del historial: las grafías con
+  // que se cargó (ver `listarContrapartes`) y el tipo de operación en el que
+  // figura. El tipo hace falta porque en los ajustes `cliente_proveedor` guarda
+  // el motivo, no una persona.
+  contraparte?: { nombres: string[]; tipo: 'venta' | 'compra' };
   // Producto: texto (nombre) o código escaneado. Empareja transacciones que
   // tengan al menos una línea con ese producto, por barcode exacto (scan) o por
   // nombre_snapshot con LIKE tokenizado (texto, palabras en cualquier orden).
   producto?: string;
+  // Producto exacto elegido en el buscador: solo por barcode, así encuentra sus
+  // operaciones aunque el producto se haya renombrado después.
+  barcode?: string;
   // Tope de filas devueltas (la pantalla de anulación no necesita el historial
   // completo, solo lo bastante reciente para encontrar el movimiento).
   limite?: number;
@@ -176,9 +183,21 @@ export async function listarTransacciones(
     where.push('fecha_hora <= ?');
     params.push(filtro.hasta);
   }
-  if (filtro.contraparte) {
-    where.push(`${sqlNormalizar('cliente_proveedor')} LIKE ?`);
-    params.push(`%${normalizarBusqueda(filtro.contraparte)}%`);
+  if (filtro.contraparte && filtro.contraparte.nombres.length > 0) {
+    const { nombres, tipo } = filtro.contraparte;
+    where.push(
+      `tipo = ? AND cliente_proveedor IN (${nombres.map(() => '?').join(', ')})`
+    );
+    params.push(tipo, ...nombres);
+  }
+  if (filtro.barcode) {
+    where.push(
+      `EXISTS (
+         SELECT 1 FROM transaccion_items ti
+         WHERE ti.transaccion_id = transacciones.id AND ti.barcode = ?
+       )`
+    );
+    params.push(filtro.barcode);
   }
   if (filtro.producto && filtro.producto.trim().length > 0) {
     const term = filtro.producto.trim();
@@ -204,6 +223,61 @@ export async function listarTransacciones(
     (filtro.limite ? ' LIMIT ?' : '');
   if (filtro.limite) params.push(filtro.limite);
   return db.getAllAsync<Transaccion>(sql, ...params);
+}
+
+/** Cliente (en ventas) o proveedor (en compras) cargado en alguna operación. */
+export type Contraparte = {
+  /** Grafía más reciente, para mostrar. */
+  nombre: string;
+  tipo: 'venta' | 'compra';
+  /** Grafías que se toman como la misma persona (mayúsculas, acentos, espacios). */
+  nombres: string[];
+  operaciones: number;
+};
+
+/**
+ * Clientes y proveedores distintos del historial. Solo ventas (incluye los
+ * cambios, que se guardan como venta) y compras: en los ajustes
+ * `cliente_proveedor` guarda el motivo. Las grafías se agrupan en JS para
+ * conservar las exactas (el filtro `contraparte` las usa tal cual) y mostrar
+ * la más reciente.
+ */
+export async function listarContrapartes(
+  db: SQLiteDatabase
+): Promise<Contraparte[]> {
+  const filas = await db.getAllAsync<{
+    nombre: string;
+    tipo: 'venta' | 'compra';
+    n: number;
+  }>(
+    `SELECT cliente_proveedor AS nombre, tipo, COUNT(*) AS n,
+            MAX(fecha_hora) AS ultima
+       FROM transacciones
+      WHERE tipo IN ('venta', 'compra')
+        AND cliente_proveedor IS NOT NULL
+        AND trim(cliente_proveedor) <> ''
+      GROUP BY cliente_proveedor, tipo
+      ORDER BY ultima DESC`
+  );
+  // Vienen de la más reciente a la más vieja: la primera grafía de cada grupo
+  // es la última que se usó.
+  const grupos = new Map<string, Contraparte>();
+  for (const f of filas) {
+    const clave = `${f.tipo}|${normalizarBusqueda(f.nombre.trim())}`;
+    const grupo = grupos.get(clave);
+    if (grupo) {
+      grupo.nombres.push(f.nombre);
+      grupo.operaciones += f.n;
+    } else {
+      grupos.set(clave, {
+        nombre: f.nombre.trim(),
+        tipo: f.tipo,
+        nombres: [f.nombre],
+        operaciones: f.n,
+      });
+    }
+  }
+  return [...grupos.values()];
 }
 
 export async function getTransaccion(
