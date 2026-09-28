@@ -82,8 +82,9 @@ export default function TransaccionScreen() {
       )
     );
   }, [margenGeneral, tipo]);
-  // Texto crudo del input de cantidad en 'ajuste' mientras se escribe (permite
-  // estados intermedios como "-" sin perderlos). Override efímero del número.
+  // Texto crudo del input de cantidad mientras se escribe (permite vaciar el
+  // campo o, en 'ajuste', estados intermedios como "-" sin perderlos). Override
+  // efímero del número.
   const [cantTexto, setCantTexto] = useState<Record<string, string>>({});
   // Resaltado temporal del último producto agregado/incrementado.
   const [resaltado, setResaltado] = useState<string | null>(null);
@@ -239,13 +240,21 @@ export default function TransaccionScreen() {
     );
   };
 
-  // Compra: edición directa de la cantidad, para no tener que pulsar + muchas
-  // veces al ingresar grandes cantidades. Se guarda el texto crudo mientras se
-  // escribe (permite vaciar el campo) y el número se recupera al salir del foco.
+  // Compra y venta: edición directa de la cantidad, para no tener que pulsar +
+  // muchas veces al ingresar grandes cantidades. Se guarda el texto crudo
+  // mientras se escribe (permite vaciar el campo) y el número se recupera al
+  // salir del foco. En venta rige el mismo tope de stock que en el botón +:
+  // si se escribe de más, se lleva al máximo disponible y se avisa.
   const editarCantidad = (barcode: string, texto: string) => {
     const limpio = texto.replace(/[^\d]/g, '');
-    setCantTexto((t) => ({ ...t, [barcode]: limpio }));
-    const n = limpio === '' ? 0 : parseInt(limpio, 10) || 0;
+    let n = limpio === '' ? 0 : parseInt(limpio, 10) || 0;
+    const stock = lineas.find((l) => l.barcode === barcode)?.stock_actual ?? 0;
+    const excede = tipo === 'venta' && n > stock;
+    if (excede) {
+      n = stock;
+      toast(`Stock máximo: ${stock}`);
+    }
+    setCantTexto((t) => ({ ...t, [barcode]: excede ? String(n) : limpio }));
     setLineas((prev) =>
       prev.map((l) => (l.barcode === barcode ? { ...l, cantidad: n } : l))
     );
@@ -580,24 +589,20 @@ export default function TransaccionScreen() {
                   >
                     <Ionicons name="remove" size={18} color={colors.text} />
                   </Pressable>
-                  {tipo === 'compra' ? (
-                    <TextInput
-                      style={styles.qtyInput}
-                      keyboardType="numeric"
-                      selectTextOnFocus
-                      value={
-                        cantTexto[item.barcode] !== undefined
-                          ? cantTexto[item.barcode]
-                          : String(item.cantidad)
-                      }
-                      onChangeText={(t) => editarCantidad(item.barcode, t)}
-                      onBlur={() => limpiarTexto(item.barcode)}
-                      placeholder="0"
-                      placeholderTextColor={colors.textMuted}
-                    />
-                  ) : (
-                    <Text style={styles.qty}>{item.cantidad}</Text>
-                  )}
+                  <TextInput
+                    style={styles.qtyInput}
+                    keyboardType="numeric"
+                    selectTextOnFocus
+                    value={
+                      cantTexto[item.barcode] !== undefined
+                        ? cantTexto[item.barcode]
+                        : String(item.cantidad)
+                    }
+                    onChangeText={(t) => editarCantidad(item.barcode, t)}
+                    onBlur={() => limpiarTexto(item.barcode)}
+                    placeholder="0"
+                    placeholderTextColor={colors.textMuted}
+                  />
                   <Pressable
                     style={[styles.qtyBtn, topeVenta && styles.qtyBtnOff]}
                     disabled={topeVenta}
@@ -828,7 +833,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  qty: { minWidth: 28, textAlign: 'center', fontSize: font.lg, fontWeight: '700' },
   qtyInput: {
     minWidth: 56,
     textAlign: 'center',
