@@ -36,10 +36,10 @@ Esto no es un proyecto de tutorial: es software que **se usa a diario en un nego
 ## ✨ Funcionalidades
 
 ### Operación diaria
-- **Escáner de códigos de barras** (EAN-13/EAN-8/UPC-A/UPC-E) con la cámara, con debounce anti-doble-lectura y pausa controlada entre escaneos.
-- **Sesiones de venta, compra y ajuste**: se escanean productos y cada lectura repetida incrementa la cantidad — imita el gesto natural de pasar cada unidad por un lector. Total en tiempo real.
+- **Escáner de códigos de barras** (EAN-13/EAN-8/UPC-A/UPC-E) con la cámara, con debounce anti-doble-lectura y pausa controlada entre escaneos. En las operaciones es **activable**: arranca oculto, con la cámara apagada (desmontada, la única forma real de apagarla en Android), y se enciende con un botón en la fila del buscador; la lista de productos usa el espacio que libera.
+- **Sesiones de venta, compra y ajuste**: se escanean productos y cada lectura repetida incrementa la cantidad — imita el gesto natural de pasar cada unidad por un lector. La cantidad también se puede escribir a mano. Total en tiempo real.
 - **Productos a granel / sin código**: reciben un código interno autogenerado (`INT-000123`) que ocupa el mismo campo `barcode`, así el resto del modelo (líneas, reportes) no necesita casos especiales. Búsqueda por nombre integrada al mismo flujo.
-- **Tope de stock en ventas**: no se puede vender más de lo que hay; el escáner avisa si te pasás.
+- **Tope de stock en ventas**: no se puede vender más de lo que hay; el escáner avisa si te pasás, y una cantidad escrita de más se lleva al máximo disponible.
 - **Recálculo de precio en vivo en compras**: al tipear el nuevo costo, la app sugiere el precio de venta según el margen del producto (o el general), editable para redondear.
 - **Salidas sin venta**: entregas (ej. al colegio de la vereda) y deducciones con motivo — aseo/uso interno, vencido/caducado, dañado en transporte. Descuentan stock valorizado sin contaminar las ventas.
 - **Costo de transporte**: registro de fletes pagados, como categoría propia del flujo de caja (no se mezcla con compras).
@@ -61,16 +61,17 @@ Esto no es un proyecto de tutorial: es software que **se usa a diario en un nego
 - **Chequeo de inventario por rotación**: el sistema pide una muestra de productos (los menos recientemente contados); al descuadrar, **sana el libro** con un ajuste trazable y registra el **faltante** con estado de resolución (quién paga). Detecta merma sin forzar un conteo total de la tienda.
 - **Utilidad honesta**: solo se calcula sobre ventas con costo conocido — nada de números inventados.
 - **Reportes imprimibles en PDF** (inventario inicial, ventas por día/mes) generados con HTML/CSS y compartidos por el diálogo nativo.
-- **Historial filtrable** por fecha, tipo de operación y producto (por texto o escaneando el código).
+- **Historial filtrable** por fecha, tipo de operación, producto o cliente/proveedor. Mientras escribís, el buscador sugiere los productos (también los desactivados) y los clientes y proveedores que coinciden, para elegir exactamente cuál; también se puede escanear el código. Un producto elegido se busca por código, así aparecen sus operaciones aunque se haya renombrado.
 - **Ventas por producto**, en dos vistas sobre el mismo filtro de semana / mes / histórico:
   - **Más vendidos**: ranking ordenable **por unidades o por plata** — son listas distintas (el confite de $100 lidera en unidades; el cigarrillo, en dinero) y cada una responde a una pregunta distinta: qué reponer vs. qué sostiene el negocio. El orden se invierte para ver la cola de lo que sí rota pero poco. Las devoluciones se netean, así que una unidad devuelta deja de contar como vendida.
   - **Sin ventas**: el complemento exacto — productos activos que no movieron una sola unidad en el período, con la **plata que tienen quieta en el estante** (stock × precio) y hace cuánto que no se venden, o si nunca se vendieron. Es la contracara del ranking: no dice qué reponer, dice qué dejar de comprar.
+  - **Buscador** sobre las dos vistas: filtra la tabla mientras escribís y cada producto conserva su **puesto real** en el ranking (el #14 sigue siendo #14 aunque sea el único resultado).
 
 ### Respaldo y seguridad
 - **Respaldo automático a Firestore** (espejo unidireccional): cada fila modificada se marca `synced=0` y un proceso ligero la empuja cuando hay red, en lotes.
 - **Recuperación ante pérdida del teléfono**: en un equipo nuevo con base vacía, la app restaura todo desde el respaldo.
 - **Login con email/clave + ingreso con huella** (credenciales cifradas en SecureStore). La huella es un atajo local, no un método de recuperación.
-- **Borrados que sí viajan**: como la restauración es `INSERT OR REPLACE` y nunca borra filas, al anular un movimiento se guarda una *lápida* (`eliminaciones`) que el respaldo traduce en un `delete` del documento espejo. Sin eso, borrar en el teléfono no llegaría a Firestore y borrar en Firestore no llegaría al teléfono.
+- **Borrados que sí viajan**: como la restauración es `INSERT OR REPLACE` y nunca borra filas, al anular un movimiento o borrar un transporte se guarda una *lápida* (`eliminaciones`) que el respaldo traduce en un `delete` del documento espejo. Sin eso, borrar en el teléfono no llegaría a Firestore y borrar en Firestore no llegaría al teléfono.
 
 ---
 
@@ -172,7 +173,7 @@ app/                    # Expo Router (file-based)
 ├── mas-vendidos        # Ranking de productos por unidades o por valor
 ├── producto/           # Ficha y alta de producto
 └── carga-inicial       # Sesión de escaneo para inventario inicial
-components/             # ScannerView, BuscadorProducto, SyncManager, ui/
+components/             # ScannerView, EscanerActivable, BuscadorProducto, SugerenciasHistorial, SyncManager, ui/
 db/                     # Esquema, migraciones, queries tipadas por dominio
 lib/                    # auth, backup (espejo Firestore), PDF, fechas, red
 theme/                  # Design tokens

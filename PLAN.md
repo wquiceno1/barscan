@@ -39,6 +39,13 @@
 
 ✅ **Cierre del Período 1** (liquidado el 12/09/2026): primera liquidación real, con análisis patrimonial en [CIERRE-PERIODO-1.md](CIERRE-PERIODO-1.md). **Decisión 2026-09-28:** el Período 2 mantiene el modelo de liquidación por ventas con el 7%.
 
+✅ **Escáner activable, cantidad en venta y buscadores (v1.0.10)** (2026-09-28):
+> - **Escáner activable** en venta, compra, ajuste, salida y cambio: arranca oculto con la cámara apagada y se enciende desde la fila del buscador. Detalle en [PLAN-ESCANER-ACTIVABLE.md](PLAN-ESCANER-ACTIVABLE.md).
+> - **Cantidad editable en venta**, como en compra, con el mismo tope de stock que el botón +.
+> - **Buscador en Ventas por producto**: filtra la tabla en vivo conservando el puesto real del ranking.
+> - **Buscador del historial** con sugerencias en la misma pantalla: productos (también los desactivados, filtrados por código exacto) y clientes y proveedores (solo ventas y compras, porque en los ajustes `cliente_proveedor` guarda el motivo).
+> - **Fix de respaldo**: borrar un transporte ahora deja lápida, así el borrado llega a Firestore y no vuelve al restaurar.
+
 🔎 **Hallazgos:**
 > - **Expo Go ≠ APK.** La base local de Expo Go es **distinta** a la del APK instalado; al probar módulos nuevos en Expo Go solo se ve la data que se haya restaurado de Firebase, no la del APK.
 > - **Simbologías de código de barras.** El escáner hoy lee solo **EAN-13/EAN-8/UPC-A/UPC-E** ([components/ScannerView.tsx](components/ScannerView.tsx)). Productos con Code-128/Code-39/ITF o con códigos de **peso/precio variable** no leen de forma fiable → conviene tratarlos como "sin código" (operar por nombre) o, a futuro, ampliar las simbologías soportadas.
