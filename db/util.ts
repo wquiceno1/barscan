@@ -41,6 +41,21 @@ export function normalizarBusqueda(s: string): string {
     .toLowerCase();
 }
 
+/** Palabras de una búsqueda, normalizadas (sin acentos y en minúsculas). */
+export function palabrasBusqueda(termino: string): string[] {
+  return normalizarBusqueda(termino.trim()).split(/\s+/).filter(Boolean);
+}
+
+/**
+ * Criterio de las búsquedas por nombre del lado de JS: cada palabra tiene que
+ * aparecer en el texto, en cualquier orden y sin importar acentos. Es el mismo
+ * que aplican las consultas SQL con `sqlNormalizar` + un LIKE por palabra.
+ */
+export function contienePalabras(texto: string, palabras: string[]): boolean {
+  const t = normalizarBusqueda(texto);
+  return palabras.every((p) => t.includes(p));
+}
+
 // Marcas combinantes (texto en forma NFD) y caracteres precompuestos (NFC) más
 // comunes en español. Se quitan/transforman para que la comparación LIKE ignore
 // los acentos sin importar cómo se haya almacenado el nombre.

@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { Card, EmptyState, Screen } from '../components/ui';
+import { Card, EmptyState, Input, Screen } from '../components/ui';
 import {
   productosSinVentas,
   productosVendidos,
@@ -12,7 +12,7 @@ import {
   type MetricaVenta,
   type OrdenVentas,
 } from '../db/reportes';
-import { formatCOP } from '../db/util';
+import { contienePalabras, formatCOP, palabrasBusqueda } from '../db/util';
 import {
   diaADate,
   hoyMesStr,
@@ -61,6 +61,22 @@ function desdeUltimaVenta(iso: string | null): string {
   return meses === 1 ? 'Hace 1 mes' : `Hace ${meses} meses`;
 }
 
+/**
+ * Mismo criterio que el buscador de productos (`listarProductos`): cada palabra
+ * tiene que estar en el nombre, en cualquier orden y sin importar acentos, o el
+ * texto completo tiene que aparecer en el código de barras.
+ */
+function coincide(
+  fila: { nombre: string; barcode: string },
+  termino: string,
+  palabras: string[]
+): boolean {
+  return (
+    contienePalabras(fila.nombre, palabras) ||
+    fila.barcode.toLowerCase().includes(termino.toLowerCase())
+  );
+}
+
 export default function VentasPorProductoScreen() {
   const db = useSQLiteContext();
   const [vista, setVista] = useState<Vista>('vendidos');
@@ -73,6 +89,7 @@ export default function VentasPorProductoScreen() {
   const [sinVentas, setSinVentas] = useState<FilaSinVenta[]>([]);
   const [inmovilizado, setInmovilizado] = useState(0);
   const [expandido, setExpandido] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
 
   const esSemanaActual = semana === hoySemanaStr();
   const esMesActual = mes === hoyMesStr();
@@ -108,8 +125,19 @@ export default function VentasPorProductoScreen() {
 
   const enVendidos = vista === 'vendidos';
   const datos: (FilaVenta | FilaSinVenta)[] = enVendidos ? vendidos : sinVentas;
-  const visibles = expandido ? datos : datos.slice(0, TOPE_INICIAL);
-  const ocultos = datos.length - visibles.length;
+  // El puesto se fija ANTES de filtrar: al buscar, cada producto conserva su
+  // lugar real en el ranking (el #14 sigue siendo #14 aunque sea el único).
+  const termino = busqueda.trim();
+  const palabras = palabrasBusqueda(termino);
+  const buscando = palabras.length > 0;
+  const ranking = datos.map((fila, i) => ({ fila, puesto: i + 1 }));
+  const filtrados = buscando
+    ? ranking.filter(({ fila }) => coincide(fila, termino, palabras))
+    : ranking;
+  // Buscando se muestran todas las coincidencias: el tope es para la lista entera.
+  const visibles =
+    buscando || expandido ? filtrados : filtrados.slice(0, TOPE_INICIAL);
+  const ocultos = filtrados.length - visibles.length;
 
   const retroceder = () =>
     alcance === 'semana'
@@ -123,6 +151,27 @@ export default function VentasPorProductoScreen() {
 
   return (
     <Screen padded>
+      <View style={styles.searchRow}>
+        <View style={styles.searchInput}>
+          <Input
+            placeholder="Buscar por nombre o código…"
+            value={busqueda}
+            onChangeText={setBusqueda}
+          />
+        </View>
+        {busqueda.length > 0 && (
+          <Pressable
+            onPress={() => setBusqueda('')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Limpiar búsqueda"
+            style={({ pressed }) => [styles.clearBtn, pressed && styles.pressed]}
+          >
+            <Ionicons name="close" size={20} color={colors.textMuted} />
+          </Pressable>
+        )}
+      </View>
+
       <View style={styles.tabs}>
         {VISTAS.map(({ key, label }) => {
           const on = vista === key;
@@ -230,20 +279,33 @@ export default function VentasPorProductoScreen() {
 
       <FlatList
         data={visibles}
-        keyExtractor={(f) => f.barcode}
+        keyExtractor={({ fila }) => fila.barcode}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.xl }}
         ListEmptyComponent={
-          <EmptyState
-            icon={enVendidos ? 'bar-chart-outline' : 'checkmark-circle-outline'}
-            title={
-              enVendidos ? 'Sin ventas en el período' : 'Todo se vendió'
-            }
-            subtitle={
-              enVendidos
-                ? 'Cambiá de semana o de mes, o mirá todo el histórico.'
-                : 'Cada producto activo del catálogo tuvo al menos una venta en el período.'
-            }
-          />
+          buscando ? (
+            <EmptyState
+              icon="search-outline"
+              title="Sin coincidencias"
+              subtitle={
+                enVendidos
+                  ? `Ningún producto vendido en el período coincide con «${termino}». Probá con otro período o buscalo en «Sin ventas».`
+                  : `Ningún producto sin ventas coincide con «${termino}». Si se vendió en el período, está en «Vendidos».`
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={enVendidos ? 'bar-chart-outline' : 'checkmark-circle-outline'}
+              title={
+                enVendidos ? 'Sin ventas en el período' : 'Todo se vendió'
+              }
+              subtitle={
+                enVendidos
+                  ? 'Cambiá de semana o de mes, o mirá todo el histórico.'
+                  : 'Cada producto activo del catálogo tuvo al menos una venta en el período.'
+              }
+            />
+          )
         }
         ListFooterComponent={
           ocultos > 0 ? (
@@ -256,20 +318,20 @@ export default function VentasPorProductoScreen() {
             >
               <Ionicons name="list" size={16} color={colors.primary} />
               <Text style={styles.verTodosText}>
-                Ver todos ({datos.length})
+                Ver todos ({filtrados.length})
               </Text>
             </Pressable>
           ) : null
         }
-        renderItem={({ item, index }) =>
+        renderItem={({ item }) =>
           enVendidos ? (
             <FilaVendido
-              fila={item as FilaVenta}
-              puesto={index + 1}
+              fila={item.fila as FilaVenta}
+              puesto={item.puesto}
               porUnidades={metrica === 'unidades'}
             />
           ) : (
-            <FilaQuieto fila={item as FilaSinVenta} />
+            <FilaQuieto fila={item.fila as FilaSinVenta} />
           )
         }
       />
@@ -351,6 +413,21 @@ function FilaQuieto({ fila }: { fila: FilaSinVenta }) {
 }
 
 const styles = StyleSheet.create({
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  searchInput: { flex: 1 },
+  clearBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tabs: {
     flexDirection: 'row',
     backgroundColor: colors.surfaceAlt,
