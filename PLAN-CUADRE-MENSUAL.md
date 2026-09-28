@@ -9,8 +9,10 @@
 > siguiente. El chequeo por rotación y `faltantes` no cambian (se agregan por rango).
 > El "Cerrar mes" y el efectivo/inventario por mes quedaron retirados.
 
-Estado: **implementado 2026-07-31 (fase 1 + trimestral), falta probar en runtime**. Documento de
-trabajo acordado con el dueño
+Estado: **implementado 2026-07-31 (fase 1 + trimestral)**. La liquidación trimestral
+ya está en uso: el Período 1 se liquidó el 12/09/2026
+([CIERRE-PERIODO-1.md](CIERRE-PERIODO-1.md)). Falta confirmar en el dispositivo el
+chequeo por rotación y el registro de faltantes. Documento de trabajo acordado con el dueño
 (Tienda Comunal de la Vereda Santa Barbara), basado en el cuadre trimestral que
 hacía la tesorera ([docs/info-balance-duro.md](docs/info-balance-duro.md)),
 bajado a **mensual** y adaptado para ser lo más automático posible con nuestra data.

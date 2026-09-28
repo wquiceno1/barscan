@@ -1,7 +1,9 @@
 # Plan: Costos de transporte
 
-Estado: **pendiente de implementar**. Documento de trabajo acordado con el dueño
-(Tienda Comunal de la Vereda Santa Barbara).
+Estado: **fase 1 implementada** (2026-07-12, v1.0.6) **y en uso**: el Cierre del
+Período 1 (12/09/2026) registra $584.000 de transporte
+([CIERRE-PERIODO-1.md](CIERRE-PERIODO-1.md)). Fase 2 (foto del recibo) pendiente.
+Documento de trabajo acordado con el dueño (Tienda Comunal de la Vereda Santa Barbara).
 
 ## 1. Objetivo
 
@@ -106,6 +108,12 @@ la capa de datos.
 > Nota sobre borrado: hoy el respaldo es un espejo de una vía sin tombstones. Si
 > se borra un transporte localmente, no se elimina solo del respaldo remoto (igual
 > que el resto del modelo). Para v1 es aceptable; se corrige a mano si hace falta.
+>
+> **Actualización 2026-09-28:** desde v1.0.9 el respaldo sí tiene lápidas (tabla
+> `eliminaciones`), pero solo las registra el anulado de movimientos
+> (`db/transacciones.ts`). `eliminarTransporte` sigue haciendo un `DELETE` físico
+> sin lápida, así que un transporte borrado queda en Firestore y **vuelve** con
+> "Restaurar desde la nube". Pendiente: registrar la lápida al borrar.
 
 ## 6. Interfaz
 

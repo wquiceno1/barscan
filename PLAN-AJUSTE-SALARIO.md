@@ -9,7 +9,17 @@
 > `caja_mensual` (efectivo por mes) quedó retirada; el efectivo del período vive en
 > `configuracion.periodo_efectivo`.
 
-Estado: **implementado 2026-07-31, falta probar en runtime**. Documento de trabajo acordado con el dueño
+> **Decisión 2026-09-28 — se mantiene el modelo por ventas al 7%.** Después del
+> análisis patrimonial del Cierre del Período 1 se decidió conservar la fórmula
+> vigente (`7% × (efectivo + compras + transporte)`, que con el efectivo estimado
+> equivale a las ventas del período) para el Período 2. **No se adopta** la propuesta
+> de calcular el salario sobre la riqueza generada
+> ([CIERRE-PERIODO-1.md](CIERRE-PERIODO-1.md) §8). El 7% queda como porcentaje
+> elegido, no solo como valor por defecto.
+
+Estado: **implementado 2026-07-31 y en uso**: aplicado en el Cierre del Período 1
+(liquidación del 12/09/2026, salario $1.499.089; ver
+[CIERRE-PERIODO-1.md](CIERRE-PERIODO-1.md)). Documento de trabajo acordado con el dueño
 (Tienda Comunal de la Vereda Santa Barbara), basado en la transcripción del audio
 de la tesorera ([docs/info-balance-duro.md](docs/info-balance-duro.md)) y validado
 contra los datos reales de julio 2026 (respaldo en Firestore).

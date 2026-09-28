@@ -31,11 +31,19 @@
 > - **Salidas sin venta** (colegio y deducciones: aseo/uso interno, dañado en transporte, vencido, faltante): **restan stock pero no cuentan como venta**, valorizadas a precio de venta, con KPIs de cuadre mensual ("Entregado al colegio", "Deducciones"). Pantalla `app/salida.tsx` + tarjeta en inicio. Detalle en [PLAN-SALIDAS-SIN-VENTA.md](PLAN-SALIDAS-SIN-VENTA.md).
 > - **Primera migración de esquema (DB v2)**: se agregan `transacciones.categoria` y `transacciones.subcategoria` (aditiva, nullables → el espejo de respaldo sigue coherente). Esto **actualiza el supuesto previo** de "sin migración" de las iteraciones 1–11; las salidas se persisten como `tipo = 'ajuste'` distinguidas por estas columnas.
 
+✅ **Transporte, salario, liquidación, devoluciones y anulado (v1.0.6 → v1.0.9)**:
+> - **v1.0.6** (2026-07-12): **costos de transporte** (fletes) como gasto puro, **salario configurable (7%)** y porcentajes agrupados en Ajustes; en compra, confirmación si el costo supera el precio. Detalle en [PLAN-COSTOS-TRANSPORTE.md](PLAN-COSTOS-TRANSPORTE.md) y [PLAN-AJUSTE-SALARIO.md](PLAN-AJUSTE-SALARIO.md).
+> - **v1.0.7** (2026-08-04): salario sobre el **período de liquidación**, **chequeo de inventario por rotación** con registro de **faltantes**, y **liquidación trimestral** ("Liquidar período" en Reportes). Detalle en [PLAN-CUADRE-MENSUAL.md](PLAN-CUADRE-MENSUAL.md).
+> - **v1.0.8** (2026-08-04): **cambios y devoluciones** y **rediseño del home** (hero de venta + grilla). Detalle en [PLAN-DEVOLUCIONES.md](PLAN-DEVOLUCIONES.md) y [PLAN-HOME-REDISENO.md](PLAN-HOME-REDISENO.md).
+> - **v1.0.9** (2026-08-25): **anular movimientos** revirtiendo el stock, con lápidas (`eliminaciones`) que propagan el anulado a Firestore; barra de progreso del respaldo; reporte de **ventas por producto** (más vendidos / sin ventas).
+
+✅ **Cierre del Período 1** (liquidado el 12/09/2026): primera liquidación real, con análisis patrimonial en [CIERRE-PERIODO-1.md](CIERRE-PERIODO-1.md). **Decisión 2026-09-28:** el Período 2 mantiene el modelo de liquidación por ventas con el 7%.
+
 🔎 **Hallazgos:**
 > - **Expo Go ≠ APK.** La base local de Expo Go es **distinta** a la del APK instalado; al probar módulos nuevos en Expo Go solo se ve la data que se haya restaurado de Firebase, no la del APK.
 > - **Simbologías de código de barras.** El escáner hoy lee solo **EAN-13/EAN-8/UPC-A/UPC-E** ([components/ScannerView.tsx](components/ScannerView.tsx)). Productos con Code-128/Code-39/ITF o con códigos de **peso/precio variable** no leen de forma fiable → conviene tratarlos como "sin código" (operar por nombre) o, a futuro, ampliar las simbologías soportadas.
 
-🔜 **Pendiente**: pruebas de huella y de respaldo manual; respaldar cambios de solo configuración (margen); validar en dispositivo los ajustes 1–11; evaluar ampliar simbologías del escáner; y, a futuro, *development build* si se requiere respaldo en background. Ver [docs/respaldo-pendientes.md](docs/respaldo-pendientes.md).
+🔜 **Pendiente**: pruebas de huella y de respaldo manual; respaldar cambios de solo configuración (margen, salario); registrar lápida al borrar un transporte (ver [PLAN-COSTOS-TRANSPORTE.md](PLAN-COSTOS-TRANSPORTE.md) §5); confirmar en dispositivo devoluciones, home, PDF y chequeo por rotación; completar el §9 de [CIERRE-PERIODO-1.md](CIERRE-PERIODO-1.md); evaluar ampliar simbologías del escáner; y, a futuro, *development build* si se requiere respaldo en background. Ver [docs/respaldo-pendientes.md](docs/respaldo-pendientes.md).
 
 > Historial: la demo técnica de escaneo (validación de cámara + latencia API) está en [Demo técnica (completada)](#demo-técnica-completada). El diseño detallado del sistema sigue vigente más abajo.
 
@@ -148,7 +156,9 @@ El usuario indicó que seguirá refinando esta lista con el uso real de la app �
 - `configuracion`: `margen_general_pct`
 - *Nota:* `costo_snapshot` en los ítems es lo que habilita el cálculo de utilidad/margen real del período.
 
-### Pendiente para la próxima sesión
+### Pendiente para la próxima sesión — ✅ resuelto
+> Lista de la etapa de diseño (junio 2026). Todo quedó hecho: el esquema y las pantallas están más abajo, y el respaldo en Firebase arriba (con auth email/clave en vez de anónima).
+
 - Diseñar el esquema definitivo SQLite (`expo-sqlite`) con los campos `synced`/`updated_at` para el espejo incremental a Firestore (JS SDK).
 - Definir el proyecto Firebase + reglas de seguridad mínimas (auth anónima) para el respaldo.
 - Definir pantallas: carga inicial, nueva compra/venta, ajuste de inventario, buscador de productos (granel), historial/trazabilidad, reportes.

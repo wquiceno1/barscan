@@ -169,6 +169,10 @@ activa el mecanismo de control de la fórmula.
 El 7% aplicado es el **valor por defecto del sistema**, no un parámetro elegido. La clave
 `salario_pct` no existe en la configuración de la aplicación.
 
+> **Resuelto (28/09/2026):** el 7% queda confirmado como porcentaje elegido para el
+> Período 2. No hace falta cargarlo en Ajustes: es el valor por defecto del sistema y
+> cada liquidación guarda en su snapshot el porcentaje aplicado.
+
 ### 7.2 El crecimiento del inventario no se remuneró
 
 $1.616.886 de valor generado —el 46,6% del resultado— no participó de ningún cálculo de
@@ -188,6 +192,10 @@ conciliación. Se resolverá con el saneamiento de inventario.
 ---
 
 ## 8. Propuesta para el Período 2
+
+> **Decisión (28/09/2026): no se adopta para el salario.** El Período 2 mantiene el
+> modelo de liquidación por ventas con el 7% (ver §6). Esta sección queda como
+> referencia del análisis.
 
 Incorporar el patrimonio al cierre, sin reemplazar los controles actuales:
 

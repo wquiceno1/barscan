@@ -1,14 +1,16 @@
 # Plan: Salidas sin venta (Colegio y Deducciones)
 
-Estado: **fase 1 implementada** (2026-07-09), falta probar en runtime. Documento
-de trabajo acordado con el dueño (Tienda Comunal de la Vereda Santa Barbara).
+Estado: **fase 1 implementada** (2026-07-09) **y en uso**: el Cierre del Período 1
+registra $221.500 en deducciones y $148.900 entregados al colegio
+([CIERRE-PERIODO-1.md](CIERRE-PERIODO-1.md)). Documento de trabajo acordado con el
+dueño (Tienda Comunal de la Vereda Santa Barbara).
 
 Implementación (fase 1): migración v2 (`categoria`/`subcategoria` en
 `transacciones`), `db/salidas.ts` (vocabulario + labels), `finalizarTransaccion`
 con salidas categorizadas, restore del respaldo, token/variante `salida`, tarjeta
 "Salida sin venta" en inicio, pantalla `app/salida.tsx` con selector, funciones
 `salidasColegio`/`deducciones` + KPIs en Reportes, y etiquetas en historial/detalle.
-Typecheck limpio. Pendiente: probar en dispositivo. Fase 2 sigue opcional.
+Typecheck limpio. Fase 2 sigue opcional.
 
 ## 1. Objetivo
 
