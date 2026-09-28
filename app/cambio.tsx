@@ -13,7 +13,7 @@ import {
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import BuscadorProducto from '../components/BuscadorProducto';
-import ScannerView from '../components/ScannerView';
+import { BarraAgregar, RecuadroEscaner } from '../components/EscanerActivable';
 import { Button } from '../components/ui';
 import { getProducto } from '../db/productos';
 import { registrarCambio } from '../db/transacciones';
@@ -31,6 +31,8 @@ export default function CambioScreen() {
   const [devuelve, setDevuelve] = useState<LineaBorrador[]>([]);
   const [lleva, setLleva] = useState<LineaBorrador[]>([]);
   const [buscadorVisible, setBuscadorVisible] = useState(false);
+  // Oculto por defecto: la cámara solo se monta al activarla.
+  const [escanerActivo, setEscanerActivo] = useState(false);
   const [guardando, setGuardando] = useState(false);
 
   const setBucket = modo === 'devuelve' ? setDevuelve : setLleva;
@@ -248,18 +250,13 @@ export default function CambioScreen() {
     <KeyboardAvoidingView style={styles.container} behavior="padding">
       <Stack.Screen options={{ title: 'Cambio / Devolución' }} />
 
-      <View style={styles.scanner}>
-        <ScannerView
-          onScan={agregarPorCodigo}
-          paused={guardando || buscadorVisible}
-        />
-        <View style={styles.scanHint}>
-          <Ionicons name="scan-outline" size={16} color={colors.textInverse} />
-          <Text style={styles.scanHintText}>
-            Escaneá y se agrega a “{modo === 'devuelve' ? 'Devuelve' : 'Lleva'}”
-          </Text>
-        </View>
-      </View>
+      <RecuadroEscaner
+        activo={escanerActivo}
+        altura={200}
+        hint={`Escaneá y se agrega a “${modo === 'devuelve' ? 'Devuelve' : 'Lleva'}”`}
+        onScan={agregarPorCodigo}
+        paused={guardando || buscadorVisible}
+      />
 
       <View style={styles.toggle}>
         <Pressable
@@ -292,15 +289,11 @@ export default function CambioScreen() {
         </Pressable>
       </View>
 
-      <Pressable
-        onPress={() => setBuscadorVisible(true)}
-        style={({ pressed }) => [styles.sinEscanear, pressed && styles.pressed]}
-      >
-        <Ionicons name="search" size={18} color={colors.primary} />
-        <Text style={styles.sinEscanearText}>
-          Agregar sin escanear (granel / por nombre)
-        </Text>
-      </Pressable>
+      <BarraAgregar
+        onBuscar={() => setBuscadorVisible(true)}
+        escanerActivo={escanerActivo}
+        onToggleEscaner={() => setEscanerActivo((v) => !v)}
+      />
 
       <BuscadorProducto
         visible={buscadorVisible}
@@ -317,7 +310,9 @@ export default function CambioScreen() {
           Devuelve (entra al stock)
         </Text>
         {devuelve.length === 0 ? (
-          <Text style={styles.vacio}>Escaneá lo que el cliente devuelve.</Text>
+          <Text style={styles.vacio}>
+            Buscá o escaneá lo que el cliente devuelve.
+          </Text>
         ) : (
           devuelve.map((l) => renderLinea('devuelve', l))
         )}
@@ -361,21 +356,6 @@ export default function CambioScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  pressed: { opacity: 0.85 },
-  scanner: { height: 200, backgroundColor: '#000' },
-  scanHint: {
-    position: 'absolute',
-    bottom: spacing.md,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.overlay,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-  },
-  scanHintText: { color: colors.textInverse, fontSize: font.xs },
   toggle: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -398,21 +378,6 @@ const styles = StyleSheet.create({
   tabLleva: { backgroundColor: colors.venta, borderColor: colors.venta },
   tabText: { fontSize: font.md, fontWeight: '800', color: colors.textMuted },
   tabTextOn: { color: colors.textInverse },
-  sinEscanear: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  sinEscanearText: {
-    color: colors.primary,
-    fontSize: font.md,
-    fontWeight: '700',
-  },
   lista: { flex: 1 },
   listaContent: { padding: spacing.lg, gap: spacing.sm },
   section: {

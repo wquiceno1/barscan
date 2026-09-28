@@ -14,7 +14,7 @@ import {
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import BuscadorProducto from '../../components/BuscadorProducto';
-import ScannerView from '../../components/ScannerView';
+import { BarraAgregar, RecuadroEscaner } from '../../components/EscanerActivable';
 import { Button, Input } from '../../components/ui';
 import { getMargenGeneral } from '../../db/configuracion';
 import { getProducto, reactivarProducto } from '../../db/productos';
@@ -49,6 +49,8 @@ export default function TransaccionScreen() {
   const [contraparte, setContraparte] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [buscadorVisible, setBuscadorVisible] = useState(false);
+  // Oculto por defecto: la cámara solo se monta al activarla.
+  const [escanerActivo, setEscanerActivo] = useState(false);
   const [margenGeneral, setMargenGeneral] = useState<number | null>(null);
   // Confirmación al finalizar una compra si algún costo supera el precio de venta
   // (síntoma típico de invertir cantidad y costo). Guarda las líneas a persistir.
@@ -393,26 +395,19 @@ export default function TransaccionScreen() {
     <KeyboardAvoidingView style={styles.container} behavior="padding">
       <Stack.Screen options={{ title: TITULOS[tipo] }} />
 
-      <View style={styles.scanner}>
-        <ScannerView
-          onScan={agregarPorCodigo}
-          paused={guardando || buscadorVisible}
-        />
-        <View style={styles.scanHint}>
-          <Ionicons name="scan-outline" size={16} color={colors.textInverse} />
-          <Text style={styles.scanHintText}>Apunta al código de barras</Text>
-        </View>
-      </View>
+      <RecuadroEscaner
+        activo={escanerActivo}
+        altura={220}
+        hint="Apunta al código de barras"
+        onScan={agregarPorCodigo}
+        paused={guardando || buscadorVisible}
+      />
 
-      <Pressable
-        onPress={() => setBuscadorVisible(true)}
-        style={({ pressed }) => [styles.sinEscanear, pressed && styles.pressed]}
-      >
-        <Ionicons name="search" size={18} color={colors.primary} />
-        <Text style={styles.sinEscanearText}>
-          Agregar sin escanear (granel / por nombre)
-        </Text>
-      </Pressable>
+      <BarraAgregar
+        onBuscar={() => setBuscadorVisible(true)}
+        escanerActivo={escanerActivo}
+        onToggleEscaner={() => setEscanerActivo((v) => !v)}
+      />
 
       <BuscadorProducto
         visible={buscadorVisible}
@@ -433,7 +428,7 @@ export default function TransaccionScreen() {
               color={colors.textMuted}
             />
             <Text style={styles.emptyText}>
-              Escanea un producto para agregarlo.
+              Busca un producto o activa el escáner para agregarlo.
             </Text>
           </View>
         }
@@ -718,31 +713,6 @@ export default function TransaccionScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   pressed: { opacity: 0.85 },
-  scanner: { height: 220, backgroundColor: '#000' },
-  sinEscanear: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  sinEscanearText: { color: colors.primary, fontSize: font.md, fontWeight: '700' },
-  scanHint: {
-    position: 'absolute',
-    bottom: spacing.md,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.overlay,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.pill,
-  },
-  scanHintText: { color: colors.textInverse, fontSize: font.xs },
   lista: { flex: 1 },
   empty: { alignItems: 'center', paddingVertical: spacing.xxl, gap: spacing.sm },
   emptyText: { color: colors.textMuted, fontSize: font.md },
