@@ -43,7 +43,7 @@
 > - **Expo Go ≠ APK.** La base local de Expo Go es **distinta** a la del APK instalado; al probar módulos nuevos en Expo Go solo se ve la data que se haya restaurado de Firebase, no la del APK.
 > - **Simbologías de código de barras.** El escáner hoy lee solo **EAN-13/EAN-8/UPC-A/UPC-E** ([components/ScannerView.tsx](components/ScannerView.tsx)). Productos con Code-128/Code-39/ITF o con códigos de **peso/precio variable** no leen de forma fiable → conviene tratarlos como "sin código" (operar por nombre) o, a futuro, ampliar las simbologías soportadas.
 
-🔜 **Pendiente**: pruebas de huella y de respaldo manual; respaldar cambios de solo configuración (margen, salario); registrar lápida al borrar un transporte (ver [PLAN-COSTOS-TRANSPORTE.md](PLAN-COSTOS-TRANSPORTE.md) §5); confirmar en dispositivo devoluciones, home, PDF y chequeo por rotación; completar el §9 de [CIERRE-PERIODO-1.md](CIERRE-PERIODO-1.md); evaluar ampliar simbologías del escáner; y, a futuro, *development build* si se requiere respaldo en background. Ver [docs/respaldo-pendientes.md](docs/respaldo-pendientes.md).
+🔜 **Pendiente**: pruebas de huella y de respaldo manual; respaldar cambios de solo configuración (margen, salario); confirmar en dispositivo devoluciones, home, PDF y chequeo por rotación; completar el §9 de [CIERRE-PERIODO-1.md](CIERRE-PERIODO-1.md); evaluar ampliar simbologías del escáner; y, a futuro, *development build* si se requiere respaldo en background. Ver [docs/respaldo-pendientes.md](docs/respaldo-pendientes.md).
 
 > Historial: la demo técnica de escaneo (validación de cámara + latencia API) está en [Demo técnica (completada)](#demo-técnica-completada). El diseño detallado del sistema sigue vigente más abajo.
 

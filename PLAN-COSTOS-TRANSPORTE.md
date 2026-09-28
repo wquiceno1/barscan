@@ -109,11 +109,12 @@ la capa de datos.
 > se borra un transporte localmente, no se elimina solo del respaldo remoto (igual
 > que el resto del modelo). Para v1 es aceptable; se corrige a mano si hace falta.
 >
-> **Actualización 2026-09-28:** desde v1.0.9 el respaldo sí tiene lápidas (tabla
-> `eliminaciones`), pero solo las registra el anulado de movimientos
-> (`db/transacciones.ts`). `eliminarTransporte` sigue haciendo un `DELETE` físico
-> sin lápida, así que un transporte borrado queda en Firestore y **vuelve** con
-> "Restaurar desde la nube". Pendiente: registrar la lápida al borrar.
+> **Actualización 2026-09-28 — resuelto.** Desde v1.0.9 el respaldo tiene lápidas
+> (tabla `eliminaciones`, migración v7). Ahora `eliminarTransporte` borra y deja su
+> lápida en la misma transacción; el respaldo la convierte en un `delete` en
+> Firestore y `restaurar` saltea los transportes con lápida local. Los transportes
+> borrados **antes** de este cambio no dejaron lápida: si existen, siguen en
+> Firestore y hay que quitarlos a mano desde la consola.
 
 ## 6. Interfaz
 

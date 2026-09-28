@@ -78,13 +78,24 @@ export async function totalTransporte(
 }
 
 /**
- * Borra un registro de transporte (para corregir errores). Solo local: el
- * respaldo es espejo de una vía sin tombstones, así que si el registro ya se
- * subió, no se elimina solo del remoto.
+ * Borra un registro de transporte (para corregir errores) y deja una lápida
+ * para que el respaldo replique el borrado en Firestore (ver migración v7).
+ * Sin ella, el registro seguiría en la nube y volvería al restaurar. Todo
+ * atómico.
  */
 export async function eliminarTransporte(
   db: SQLiteDatabase,
   id: string
 ): Promise<void> {
-  await db.runAsync('DELETE FROM transportes WHERE id = ?', id);
+  const ts = nowIso();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('DELETE FROM transportes WHERE id = ?', id);
+    await db.runAsync(
+      `INSERT OR REPLACE INTO eliminaciones
+         (coleccion, doc_id, created_at, synced)
+       VALUES ('transportes', ?, ?, 0)`,
+      id,
+      ts
+    );
+  });
 }

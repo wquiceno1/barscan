@@ -513,6 +513,7 @@ async function restaurarImpl(
     }
 
     for (const d of transportes.docs) {
+      if (anulado.has(`transportes/${d.id}`)) continue;
       const tr = d.data() as Transporte;
       await db.runAsync(
         `INSERT OR REPLACE INTO transportes
